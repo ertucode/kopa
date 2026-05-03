@@ -72,6 +72,7 @@ import {
   CanvasDraftState,
 } from './editorSession'
 import { useToolStore } from './editorSimpleStores'
+import { Typescript } from '@common/Typescript'
 
 const DOCUMENT_PRESETS: NewDocumentPreset[] = [
   { label: 'Avatar', width: 512, height: 512 },
@@ -222,6 +223,13 @@ function cloneLayer<T extends EditorLayer>(layer: T): T {
   return { ...layer }
 }
 
+function layerDescription(layer: EditorLayer) {
+  if (layer.type === 'highlight') return ''
+  if (layer.type === 'image') return '[Image]'
+  if (layer.type === 'shape') return ''
+  Typescript.assertUnreachable(layer)
+}
+
 function cloneDocument(documentState: EditorDocument): EditorDocument {
   return {
     ...documentState,
@@ -359,7 +367,7 @@ function selectionFromDrag(documentState: EditorDocument, start: Point, current:
 }
 
 function formatPixels(value: number): string {
-  return `${Math.round(value)} px`
+  return `${Math.round(value)}`
 }
 
 function snapToStep(value: number, step: number): number {
@@ -2292,36 +2300,36 @@ export function EditorApp() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-base-100 text-base-content">
       <div className="flex min-h-0 flex-1">
-        <aside className="flex w-18 flex-col items-center gap-3 border-r border-base-content/10 px-3 py-4">
-          <button
-            className={cn('btn btn-square btn-sm', tool === 'select' ? 'btn-info' : 'btn-ghost')}
-            onClick={() => setTool('select')}
-            title="Select and transform objects"
-          >
-            <MousePointer2Icon className="size-4" />
-          </button>
-          <button
-            className={cn('btn btn-square btn-sm', tool === 'marquee' ? 'btn-info' : 'btn-ghost')}
-            onClick={() => setTool('marquee')}
-            title="Create a rectangular canvas selection"
-          >
-            <ScanLineIcon className="size-4" />
-          </button>
-          <button
-            className={cn('btn btn-square btn-sm', tool === 'highlight' ? 'btn-info' : 'btn-ghost')}
-            onClick={() => setTool('highlight')}
-            title="Paint highlight objects"
-          >
-            <span className="text-xs font-semibold">H</span>
-          </button>
-          <button
-            className={cn('btn btn-square btn-sm', tool === 'shape' ? 'btn-info' : 'btn-ghost')}
-            onClick={() => setTool('shape')}
-            title="Create shape objects"
-          >
-            <span className="text-xs font-semibold">S</span>
-          </button>
-          <div className="mt-6 flex flex-col gap-2">
+        <aside className="flex w-80 flex-col items-start gap-3 border-r border-base-content/10 px-3 py-4">
+          <div className="flex gap-2 flex-wrap">
+            <button
+              className={cn('btn btn-square btn-sm', tool === 'select' ? 'btn-info' : 'btn-ghost')}
+              onClick={() => setTool('select')}
+              title="Select and transform objects"
+            >
+              <MousePointer2Icon className="size-4" />
+            </button>
+            <button
+              className={cn('btn btn-square btn-sm', tool === 'marquee' ? 'btn-info' : 'btn-ghost')}
+              onClick={() => setTool('marquee')}
+              title="Create a rectangular canvas selection"
+            >
+              <ScanLineIcon className="size-4" />
+            </button>
+            <button
+              className={cn('btn btn-square btn-sm', tool === 'highlight' ? 'btn-info' : 'btn-ghost')}
+              onClick={() => setTool('highlight')}
+              title="Paint highlight objects"
+            >
+              <span className="text-xs font-semibold">H</span>
+            </button>
+            <button
+              className={cn('btn btn-square btn-sm', tool === 'shape' ? 'btn-info' : 'btn-ghost')}
+              onClick={() => setTool('shape')}
+              title="Create shape objects"
+            >
+              <span className="text-xs font-semibold">S</span>
+            </button>
             <button
               className="btn btn-square btn-sm btn-ghost"
               onClick={handleUndo}
@@ -2338,6 +2346,303 @@ export function EditorApp() {
             >
               <Redo2Icon className="size-4" />
             </button>
+          </div>
+          <div className="flex flex-col gap-2">
+            <section>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
+                Highlight Tool
+              </div>
+              <div className="space-y-3 rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
+                <div className="grid grid-cols-[auto_1fr] items-center gap-3">
+                  <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Color</span>
+                  <input
+                    type="color"
+                    className="input input-xs h-9 w-full p-1"
+                    value={highlightSettings.color}
+                    onChange={event =>
+                      setHighlightSettings(current => ({
+                        ...current,
+                        color: event.target.value,
+                      }))
+                    }
+                  />
+                  <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Opacity</span>
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                    <input
+                      type="range"
+                      min="0.05"
+                      max="1"
+                      step="0.05"
+                      className="range range-xs"
+                      value={highlightSettings.opacity}
+                      onChange={event =>
+                        setHighlightSettings(current => ({
+                          ...current,
+                          opacity: clampHighlightOpacity(Number(event.target.value)),
+                        }))
+                      }
+                    />
+                    <span className="w-10 text-right text-xs">{Math.round(highlightSettings.opacity * 100)}%</span>
+                  </div>
+                  <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Brush</span>
+                  <select
+                    className="select select-xs"
+                    value={highlightSettings.brushShape}
+                    onChange={event =>
+                      setHighlightSettings(current => ({
+                        ...current,
+                        brushShape: event.target.value as HighlightBrushShape,
+                      }))
+                    }
+                  >
+                    <option value="circle">Circle</option>
+                    <option value="square">Square</option>
+                  </select>
+                  <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Size</span>
+                  <input
+                    type="number"
+                    min={4}
+                    max={256}
+                    className="input input-xs"
+                    value={highlightSettings.brushSize}
+                    onChange={event =>
+                      setHighlightSettings(current => ({
+                        ...current,
+                        brushSize: clampHighlightBrushSize(Number(event.target.value) || current.brushSize),
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
+                Shape Tool
+              </div>
+              <div className="space-y-3 rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
+                <div className="grid grid-cols-[auto_1fr] items-center gap-3">
+                  <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Type</span>
+                  <select
+                    className="select select-xs"
+                    value={shapeSettings.shape}
+                    onChange={event =>
+                      setShapeSettings(current => ({
+                        ...current,
+                        shape: event.target.value as ShapeType,
+                      }))
+                    }
+                  >
+                    <option value="rectangle">Rectangle</option>
+                    <option value="circle">Circle</option>
+                    <option value="ellipse">Ellipse</option>
+                  </select>
+                  <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Fill</span>
+                  <input
+                    type="color"
+                    className="input input-xs h-9 w-full p-1"
+                    value={shapeSettings.fillColor}
+                    onChange={event =>
+                      setShapeSettings(current => ({
+                        ...current,
+                        fillColor: event.target.value,
+                      }))
+                    }
+                  />
+                  <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Border</span>
+                  <input
+                    type="color"
+                    className="input input-xs h-9 w-full p-1"
+                    value={shapeSettings.borderColor}
+                    onChange={event =>
+                      setShapeSettings(current => ({
+                        ...current,
+                        borderColor: event.target.value,
+                      }))
+                    }
+                  />
+                  <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Border Width</span>
+                  <input
+                    type="number"
+                    min={0}
+                    className="input input-xs"
+                    value={shapeSettings.borderWidth ?? 2}
+                    onChange={event =>
+                      setShapeSettings(current => ({
+                        ...current,
+                        borderWidth: Math.max(0, Math.round(Number(event.target.value) || 0)),
+                      }))
+                    }
+                  />
+                  <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Radius</span>
+                  <input
+                    type="number"
+                    min={0}
+                    className="input input-xs"
+                    value={shapeSettings.borderRadius}
+                    onChange={event =>
+                      setShapeSettings(current => ({
+                        ...current,
+                        borderRadius: Math.max(0, Math.round(Number(event.target.value) || 0)),
+                      }))
+                    }
+                  />
+                  <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Opacity</span>
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                    <input
+                      type="range"
+                      min="0.05"
+                      max="1"
+                      step="0.05"
+                      className="range range-xs"
+                      value={shapeSettings.opacity}
+                      onChange={event =>
+                        setShapeSettings(current => ({
+                          ...current,
+                          opacity: clampShapeOpacity(Number(event.target.value)),
+                        }))
+                      }
+                    />
+                    <span className="w-10 text-right text-xs">{Math.round(shapeSettings.opacity * 100)}%</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
+                Selection
+              </div>
+              <div className="rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
+                {documentState?.selection && selectionDraft ? (
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <Button className="btn-sm btn-soft flex-1" onClick={() => void copySelectionToClipboard()}>
+                        Copy
+                      </Button>
+                      <Button
+                        className="btn-sm btn-soft flex-1"
+                        onClick={() => void saveSelectionImage()}
+                        disabled={isSaving}
+                      >
+                        Save PNG
+                      </Button>
+                    </div>
+                    <div className="space-y-1">
+                      <div>
+                        Origin: {formatPixels(documentState.selection.x)}, {formatPixels(documentState.selection.y)}
+                      </div>
+                      <div>
+                        Size: {formatPixels(documentState.selection.width)} x{' '}
+                        {formatPixels(documentState.selection.height)}
+                      </div>
+                    </div>
+
+                    <form
+                      className="space-y-2"
+                      onSubmit={event => {
+                        event.preventDefault()
+                        applySelectionPosition()
+                      }}
+                    >
+                      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">
+                        Placement
+                      </div>
+                      <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                        <label className="form-control gap-1">
+                          <span className="label text-[11px]">X</span>
+                          <input
+                            className="input input-xs"
+                            value={selectionDraft.x}
+                            onChange={event =>
+                              setSelectionDraft(current => (current ? { ...current, x: event.target.value } : current))
+                            }
+                          />
+                        </label>
+                        <label className="form-control gap-1">
+                          <span className="label text-[11px]">Y</span>
+                          <input
+                            className="input input-xs"
+                            value={selectionDraft.y}
+                            onChange={event =>
+                              setSelectionDraft(current => (current ? { ...current, y: event.target.value } : current))
+                            }
+                          />
+                        </label>
+                        <div className="flex items-end">
+                          <button
+                            type="submit"
+                            className="btn btn-xs btn-info w-full"
+                            disabled={isSelectionPositionUnchanged}
+                          >
+                            Apply
+                          </button>
+                        </div>
+                      </div>
+                    </form>
+
+                    <form
+                      className="space-y-2"
+                      onSubmit={event => {
+                        event.preventDefault()
+                        applySelectionSize()
+                      }}
+                    >
+                      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">
+                        Exact size
+                      </div>
+                      <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                        <label className="form-control gap-1">
+                          <span className="label text-[11px]">W</span>
+                          <input
+                            className="input input-xs"
+                            value={selectionDraft.width}
+                            onChange={event =>
+                              setSelectionDraft(current =>
+                                current ? { ...current, width: event.target.value } : current
+                              )
+                            }
+                          />
+                        </label>
+                        <label className="form-control gap-1">
+                          <span className="label text-[11px]">H</span>
+                          <input
+                            className="input input-xs"
+                            value={selectionDraft.height}
+                            onChange={event =>
+                              setSelectionDraft(current =>
+                                current ? { ...current, height: event.target.value } : current
+                              )
+                            }
+                          />
+                        </label>
+                        <div className="flex items-end">
+                          <button
+                            type="submit"
+                            className="btn btn-xs btn-info w-full"
+                            disabled={isSelectionSizeUnchanged}
+                          >
+                            Apply
+                          </button>
+                        </div>
+                      </div>
+                    </form>
+                  </div>
+                ) : (
+                  <div>
+                    Use the marquee tool to select any canvas region, then drag inside it to move the flattened image
+                    selection.
+                  </div>
+                )}
+              </div>
+            </section>
+            <section>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">History</div>
+              <div className="rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
+                <div>{history.past.length} undo step(s)</div>
+                <div>{history.future.length} redo step(s)</div>
+              </div>
+            </section>
           </div>
         </aside>
 
@@ -2521,7 +2826,7 @@ export function EditorApp() {
               )}
             </section>
 
-            <aside className="flex min-h-0 w-80 flex-col gap-5 overflow-y-auto border-l border-base-content/10 px-4 py-4">
+            <aside className="flex min-h-0 w-80 flex-col gap-2 overflow-y-auto border-l border-base-content/10 px-4 py-4">
               <section>
                 <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
                   Project
@@ -2601,7 +2906,7 @@ export function EditorApp() {
 
               <section>
                 {documentState ? (
-                  <div className="space-y-3 rounded-2xl border border-base-content/10 bg-base-200/60 p-4">
+                  <div className="space-y-3 py-4">
                     <PanelForm onSubmit={applyCanvasDraft} header="Canvas size">
                       <FormItem
                         label="W"
@@ -2666,33 +2971,26 @@ export function EditorApp() {
               </section>
 
               <section>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
                   Active Object
                 </div>
-                <div className="rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
+                <div className="pb-4 pt-2 text-sm text-base-content/70">
                   {activeLayer ? (
                     <div className="space-y-3">
-                      <div className="text-xs text-base-content/55">
-                        Use math and variables like `imageX`, `imageY`, `imageWidth`, `imageHeight`, `canvasWidth`, and
-                        `canvasHeight`.
+                      <div className="font-medium text-base-content">
+                        {activeLayer.name} {layerDescription(activeLayer)}
                       </div>
-                      <div className="font-medium text-base-content">{activeLayer.name}</div>
-                      <div className="text-xs uppercase tracking-[0.14em] text-base-content/50">
-                        {activeLayer.type === 'highlight'
-                          ? 'Highlight'
-                          : activeLayer.type === 'shape'
-                            ? 'Shape'
-                            : 'Image'}
-                      </div>
-                      <div>
-                        Position: {formatPixels(activeLayer.x)}, {formatPixels(activeLayer.y)}
-                      </div>
-                      <div>
-                        Display size: {formatPixels(activeLayer.width)} x {formatPixels(activeLayer.height)}
+                      <div className="flex gap-2 text-xs">
+                        <div>
+                          Position: ({formatPixels(activeLayer.x)},{formatPixels(activeLayer.y)})
+                        </div>
+                        <div>
+                          Display Size: {formatPixels(activeLayer.width)}x{formatPixels(activeLayer.height)}
+                        </div>
                       </div>
                       {isImageLayer(activeLayer) && (
                         <div>
-                          Raster size: {formatPixels(activeLayer.pixelWidth)} x {formatPixels(activeLayer.pixelHeight)}
+                          Raster size: {formatPixels(activeLayer.pixelWidth)}x{formatPixels(activeLayer.pixelHeight)}
                         </div>
                       )}
                       {layerPositionDraft && layerPositionDraft.layerId === activeLayer.id && (
@@ -2704,9 +3002,6 @@ export function EditorApp() {
                               applyInspectorPosition()
                             }}
                           >
-                            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">
-                              Placement
-                            </div>
                             <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
                               <label className="form-control gap-1">
                                 <span className="label text-[11px]">X</span>
@@ -2796,10 +3091,7 @@ export function EditorApp() {
                           </form>
                         )}
                       {activeHighlight && (
-                        <div className="space-y-3 rounded-xl border border-base-content/10 bg-base-100/40 p-3">
-                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">
-                            Highlight style
-                          </div>
+                        <div className="space-y-3 py-3">
                           <div className="grid grid-cols-[auto_1fr] items-center gap-3">
                             <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Color</span>
                             <input
@@ -2949,14 +3241,6 @@ export function EditorApp() {
                   Variables
                 </div>
                 <div className="space-y-3 rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
-                  <div className="text-xs text-base-content/55">
-                    Define project variables once, then reuse them in any numeric input. Variables can reference
-                    `canvasWidth`, `canvasHeight`, and other custom variables.
-                  </div>
-                  <div className="grid grid-cols-[1fr_1fr] gap-2 text-[11px] text-base-content/50">
-                    <div>`canvasWidth`: {formatPixels(documentState?.width ?? 0)}</div>
-                    <div>`canvasHeight`: {formatPixels(documentState?.height ?? 0)}</div>
-                  </div>
                   <div className="space-y-2">
                     {customVariables.map(variable => {
                       const trimmedName = variable.name.trim()
@@ -3020,309 +3304,6 @@ export function EditorApp() {
                   <Button className="btn-sm btn-soft w-full" onClick={addCustomVariable}>
                     Add Variable
                   </Button>
-                </div>
-              </section>
-
-              <section>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
-                  Highlight Tool
-                </div>
-                <div className="space-y-3 rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
-                  <div className="text-xs text-base-content/55">
-                    Drag on the canvas in highlight mode to create a movable standalone highlight object.
-                  </div>
-                  <div className="grid grid-cols-[auto_1fr] items-center gap-3">
-                    <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Color</span>
-                    <input
-                      type="color"
-                      className="input input-xs h-9 w-full p-1"
-                      value={highlightSettings.color}
-                      onChange={event =>
-                        setHighlightSettings(current => ({
-                          ...current,
-                          color: event.target.value,
-                        }))
-                      }
-                    />
-                    <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Opacity</span>
-                    <div className="grid grid-cols-[1fr_auto] items-center gap-2">
-                      <input
-                        type="range"
-                        min="0.05"
-                        max="1"
-                        step="0.05"
-                        className="range range-xs"
-                        value={highlightSettings.opacity}
-                        onChange={event =>
-                          setHighlightSettings(current => ({
-                            ...current,
-                            opacity: clampHighlightOpacity(Number(event.target.value)),
-                          }))
-                        }
-                      />
-                      <span className="w-10 text-right text-xs">{Math.round(highlightSettings.opacity * 100)}%</span>
-                    </div>
-                    <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Brush</span>
-                    <select
-                      className="select select-xs"
-                      value={highlightSettings.brushShape}
-                      onChange={event =>
-                        setHighlightSettings(current => ({
-                          ...current,
-                          brushShape: event.target.value as HighlightBrushShape,
-                        }))
-                      }
-                    >
-                      <option value="circle">Circle</option>
-                      <option value="square">Square</option>
-                    </select>
-                    <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Size</span>
-                    <input
-                      type="number"
-                      min={4}
-                      max={256}
-                      className="input input-xs"
-                      value={highlightSettings.brushSize}
-                      onChange={event =>
-                        setHighlightSettings(current => ({
-                          ...current,
-                          brushSize: clampHighlightBrushSize(Number(event.target.value) || current.brushSize),
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
-              </section>
-
-              <section>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
-                  Shape Tool
-                </div>
-                <div className="space-y-3 rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
-                  <div className="text-xs text-base-content/55">
-                    Drag on the canvas in shape mode to create a rectangle, circle, or ellipse object.
-                  </div>
-                  <div className="grid grid-cols-[auto_1fr] items-center gap-3">
-                    <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Type</span>
-                    <select
-                      className="select select-xs"
-                      value={shapeSettings.shape}
-                      onChange={event =>
-                        setShapeSettings(current => ({
-                          ...current,
-                          shape: event.target.value as ShapeType,
-                        }))
-                      }
-                    >
-                      <option value="rectangle">Rectangle</option>
-                      <option value="circle">Circle</option>
-                      <option value="ellipse">Ellipse</option>
-                    </select>
-                    <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Fill</span>
-                    <input
-                      type="color"
-                      className="input input-xs h-9 w-full p-1"
-                      value={shapeSettings.fillColor}
-                      onChange={event =>
-                        setShapeSettings(current => ({
-                          ...current,
-                          fillColor: event.target.value,
-                        }))
-                      }
-                    />
-                    <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Border</span>
-                    <input
-                      type="color"
-                      className="input input-xs h-9 w-full p-1"
-                      value={shapeSettings.borderColor}
-                      onChange={event =>
-                        setShapeSettings(current => ({
-                          ...current,
-                          borderColor: event.target.value,
-                        }))
-                      }
-                    />
-                    <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Border Width</span>
-                    <input
-                      type="number"
-                      min={0}
-                      className="input input-xs"
-                      value={shapeSettings.borderWidth ?? 2}
-                      onChange={event =>
-                        setShapeSettings(current => ({
-                          ...current,
-                          borderWidth: Math.max(0, Math.round(Number(event.target.value) || 0)),
-                        }))
-                      }
-                    />
-                    <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Radius</span>
-                    <input
-                      type="number"
-                      min={0}
-                      className="input input-xs"
-                      value={shapeSettings.borderRadius}
-                      onChange={event =>
-                        setShapeSettings(current => ({
-                          ...current,
-                          borderRadius: Math.max(0, Math.round(Number(event.target.value) || 0)),
-                        }))
-                      }
-                    />
-                    <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Opacity</span>
-                    <div className="grid grid-cols-[1fr_auto] items-center gap-2">
-                      <input
-                        type="range"
-                        min="0.05"
-                        max="1"
-                        step="0.05"
-                        className="range range-xs"
-                        value={shapeSettings.opacity}
-                        onChange={event =>
-                          setShapeSettings(current => ({
-                            ...current,
-                            opacity: clampShapeOpacity(Number(event.target.value)),
-                          }))
-                        }
-                      />
-                      <span className="w-10 text-right text-xs">{Math.round(shapeSettings.opacity * 100)}%</span>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
-                  Selection
-                </div>
-                <div className="rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
-                  {documentState?.selection && selectionDraft ? (
-                    <div className="space-y-3">
-                      <div className="text-xs text-base-content/55">
-                        Use math and variables like `selectionX`, `selectionY`, `selectionWidth`, `selectionHeight`,
-                        `canvasWidth`, and `canvasHeight`.
-                      </div>
-                      <div className="flex gap-2">
-                        <Button className="btn-sm btn-soft flex-1" onClick={() => void copySelectionToClipboard()}>
-                          Copy
-                        </Button>
-                        <Button
-                          className="btn-sm btn-soft flex-1"
-                          onClick={() => void saveSelectionImage()}
-                          disabled={isSaving}
-                        >
-                          Save PNG
-                        </Button>
-                      </div>
-                      <div className="space-y-1">
-                        <div>
-                          Origin: {formatPixels(documentState.selection.x)}, {formatPixels(documentState.selection.y)}
-                        </div>
-                        <div>
-                          Size: {formatPixels(documentState.selection.width)} x{' '}
-                          {formatPixels(documentState.selection.height)}
-                        </div>
-                      </div>
-
-                      <form
-                        className="space-y-2"
-                        onSubmit={event => {
-                          event.preventDefault()
-                          applySelectionPosition()
-                        }}
-                      >
-                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">
-                          Placement
-                        </div>
-                        <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
-                          <label className="form-control gap-1">
-                            <span className="label text-[11px]">X</span>
-                            <input
-                              className="input input-xs"
-                              value={selectionDraft.x}
-                              onChange={event =>
-                                setSelectionDraft(current =>
-                                  current ? { ...current, x: event.target.value } : current
-                                )
-                              }
-                            />
-                          </label>
-                          <label className="form-control gap-1">
-                            <span className="label text-[11px]">Y</span>
-                            <input
-                              className="input input-xs"
-                              value={selectionDraft.y}
-                              onChange={event =>
-                                setSelectionDraft(current =>
-                                  current ? { ...current, y: event.target.value } : current
-                                )
-                              }
-                            />
-                          </label>
-                          <div className="flex items-end">
-                            <button
-                              type="submit"
-                              className="btn btn-xs btn-info w-full"
-                              disabled={isSelectionPositionUnchanged}
-                            >
-                              Apply
-                            </button>
-                          </div>
-                        </div>
-                      </form>
-
-                      <form
-                        className="space-y-2"
-                        onSubmit={event => {
-                          event.preventDefault()
-                          applySelectionSize()
-                        }}
-                      >
-                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">
-                          Exact size
-                        </div>
-                        <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
-                          <label className="form-control gap-1">
-                            <span className="label text-[11px]">W</span>
-                            <input
-                              className="input input-xs"
-                              value={selectionDraft.width}
-                              onChange={event =>
-                                setSelectionDraft(current =>
-                                  current ? { ...current, width: event.target.value } : current
-                                )
-                              }
-                            />
-                          </label>
-                          <label className="form-control gap-1">
-                            <span className="label text-[11px]">H</span>
-                            <input
-                              className="input input-xs"
-                              value={selectionDraft.height}
-                              onChange={event =>
-                                setSelectionDraft(current =>
-                                  current ? { ...current, height: event.target.value } : current
-                                )
-                              }
-                            />
-                          </label>
-                          <div className="flex items-end">
-                            <button
-                              type="submit"
-                              className="btn btn-xs btn-info w-full"
-                              disabled={isSelectionSizeUnchanged}
-                            >
-                              Apply
-                            </button>
-                          </div>
-                        </div>
-                      </form>
-                    </div>
-                  ) : (
-                    <div>
-                      Use the marquee tool to select any canvas region, then drag inside it to move the flattened image
-                      selection.
-                    </div>
-                  )}
                 </div>
               </section>
 
@@ -3398,16 +3379,6 @@ export function EditorApp() {
                   ) : (
                     <div>No objects yet.</div>
                   )}
-                </div>
-              </section>
-
-              <section>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
-                  History
-                </div>
-                <div className="rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
-                  <div>{history.past.length} undo step(s)</div>
-                  <div>{history.future.length} redo step(s)</div>
                 </div>
               </section>
             </aside>
