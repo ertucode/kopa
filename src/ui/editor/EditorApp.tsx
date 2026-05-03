@@ -98,6 +98,8 @@ type InteractionState =
       type: 'creating-highlight'
       initialDocument: EditorDocument
       layerId: string
+      start: Point
+      axisLock: 'x' | 'y' | null
     }
   | {
       type: 'creating-shape'
@@ -1480,6 +1482,7 @@ export function EditorApp() {
   }
 
   function beginHighlightCreation(pointer: Point) {
+    console.log('[Highlight] beginHighlightCreation - start point:', pointer)
     if (!documentState) return
     const layer = createHighlightLayer([pointer], highlightSettings)
     setDocumentState({
@@ -1492,6 +1495,8 @@ export function EditorApp() {
       type: 'creating-highlight',
       initialDocument: cloneDocument(documentState),
       layerId: layer.id,
+      start: pointer,
+      axisLock: null,
     })
   }
 
@@ -1579,23 +1584,54 @@ export function EditorApp() {
     setDocumentState({ ...documentState, selection })
   }
 
-  function updateHighlightCreation(pointer: Point) {
+  function updateHighlightCreation(pointer: Point, constrainAxis: boolean) {
     if (!interaction || interaction.type !== 'creating-highlight' || !documentState) return
+
+    const layer = documentState.layers.find(l => l.id === interaction.layerId)
+    if (!layer || !isHighlightLayer(layer)) return
+
+    const absolutePoints = getHighlightAbsolutePoints(layer)
+    const lastPoint = absolutePoints[absolutePoints.length - 1]
+
+    console.log('[Highlight] update - constrainAxis:', constrainAxis, 'axisLock:', interaction.axisLock, 'lastPoint:', lastPoint, 'pointer:', pointer)
+
+    let constrainedPointer = pointer
+    let nextAxisLock = interaction.axisLock
+
+    if (!constrainAxis) {
+      nextAxisLock = null
+    } else if (lastPoint) {
+      if (interaction.axisLock === null) {
+        const deltaX = Math.abs(pointer.x - lastPoint.x)
+        const deltaY = Math.abs(pointer.y - lastPoint.y)
+        nextAxisLock = deltaX >= deltaY ? 'x' : 'y'
+        console.log('[Highlight] locking axis:', nextAxisLock, 'deltaX:', deltaX, 'deltaY:', deltaY)
+      }
+      console.log('[Highlight] using locked axis:', nextAxisLock)
+      if (nextAxisLock === 'x') {
+        constrainedPointer = { x: pointer.x, y: lastPoint.y }
+      } else {
+        constrainedPointer = { x: lastPoint.x, y: pointer.y }
+      }
+    }
+
+    if (
+      lastPoint &&
+      Math.round(lastPoint.x) === Math.round(constrainedPointer.x) &&
+      Math.round(lastPoint.y) === Math.round(constrainedPointer.y)
+    ) {
+      return
+    }
+
     setDocumentState(
       updateLayer(documentState, interaction.layerId, layer => {
         if (!isHighlightLayer(layer)) return layer
-        const absolutePoints = getHighlightAbsolutePoints(layer)
-        const lastPoint = absolutePoints[absolutePoints.length - 1]
-        if (
-          lastPoint &&
-          Math.round(lastPoint.x) === Math.round(pointer.x) &&
-          Math.round(lastPoint.y) === Math.round(pointer.y)
-        ) {
-          return layer
-        }
-        return updateHighlightLayerPoints(layer, [...absolutePoints, pointer])
+        return updateHighlightLayerPoints(layer, [...getHighlightAbsolutePoints(layer), constrainedPointer])
       })
     )
+    if (interaction.axisLock !== nextAxisLock) {
+      setInteraction({ ...interaction, axisLock: nextAxisLock })
+    }
   }
 
   function updateShapeCreation(pointer: Point) {
@@ -1751,7 +1787,8 @@ export function EditorApp() {
       return
     }
     if (interaction.type === 'creating-highlight') {
-      updateHighlightCreation(pointer)
+      console.log('[Highlight] pointerMove - shiftKey:', event.shiftKey, 'pointer:', pointer)
+      updateHighlightCreation(pointer, event.shiftKey)
       return
     }
     if (interaction.type === 'creating-shape') {
@@ -3122,7 +3159,7 @@ export function EditorApp() {
                       type="number"
                       min={0}
                       className="input input-xs"
-                      value={shapeSettings.borderWidth}
+                      value={shapeSettings.borderWidth ?? 2}
                       onChange={event =>
                         setShapeSettings(current => ({
                           ...current,
