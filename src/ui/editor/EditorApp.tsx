@@ -7,6 +7,7 @@ import {
   Redo2Icon,
   SaveIcon,
   ScanLineIcon,
+  Trash2Icon,
   Undo2Icon,
 } from 'lucide-react'
 import { Button } from '@/lib/components/button'
@@ -16,7 +17,7 @@ import { useShortcuts } from '@/lib/hooks/useShortcuts'
 import { cn } from '@/lib/functions/clsx'
 import { getWindowElectron, windowArgs } from '@/getWindowElectron'
 import { RecentEditorProject } from '@common/EditorProject'
-import { applyFloatingSelectionToLayer, createLayerFromFile, cutSelectionFromLayer, loadImageElement } from './raster'
+import { createLayerFromFile, cutSelectionFromDocument, loadImageElement } from './raster'
 import { deserializeProject, serializeProject } from './projectPersistence'
 import { EditorDocument, EditorTool, HistoryEntry, ImageLayer, NewDocumentPreset, PixelSelection, ResizeHandle } from './types'
 
@@ -47,16 +48,13 @@ type InteractionState =
   | {
       type: 'creating-selection'
       initialDocument: EditorDocument
-      layerId: string
       start: Point
     }
   | {
       type: 'moving-selection'
       initialDocument: EditorDocument
-      layerId: string
       selectionStart: PixelSelection
       pointerStart: Point
-      cutLayerDataUrl: string
       floatingDataUrl: string
     }
   | null
@@ -99,27 +97,69 @@ type LayerSizeDraftState = {
   height: string
 }
 
+type SelectionDraftState = {
+  x: string
+  y: string
+  width: string
+  height: string
+}
+
+type CustomVariableDraft = {
+  id: string
+  name: string
+  expression: string
+}
+
 type ProjectNameDraftState = {
   value: string
 }
 
+type ExpressionVariables = Record<string, number>
+
 type SelectionPreview = {
-  layerId: string
   floatingDataUrl: string
-  layerDataUrl: string
   selection: PixelSelection
 }
+
+type PendingDraftSyncState = {
+  layerPosition: LayerPositionDraftState | null
+  layerSize: LayerSizeDraftState | null
+  selection: SelectionDraftState | null
+  pasteSize: PasteSizeDraftState | null
+}
+
+type CanvasContextMenuItem =
+  | {
+      type: 'layer'
+      layerId: string
+    }
+  | {
+      type: 'selection'
+      layerId: string | null
+    }
 
 type EditorSessionState = {
   tool: EditorTool
   canvasDraft: CanvasDraftState
   movementStep: string
+  movementStepDraft: string
+  pasteSizeDraft: PasteSizeDraftState
+  layerPositionDraft: LayerPositionDraftState | null
+  layerSizeDraft: LayerSizeDraftState | null
+  selectionDraft: SelectionDraftState | null
+  variables: CustomVariableDraft[]
 }
 
 const DEFAULT_EDITOR_SESSION: EditorSessionState = {
   tool: 'select',
   canvasDraft: { width: '1024', height: '1024' },
   movementStep: '1',
+  movementStepDraft: '1',
+  pasteSizeDraft: { width: '', height: '' },
+  layerPositionDraft: null,
+  layerSizeDraft: null,
+  selectionDraft: null,
+  variables: [],
 }
 
 function cloneDocument(documentState: EditorDocument): EditorDocument {
@@ -158,10 +198,6 @@ function updateLayer(documentState: EditorDocument, layerId: string, updater: (l
   }
 }
 
-function replaceActiveLayerData(documentState: EditorDocument, layerId: string, dataUrl: string): EditorDocument {
-  return updateLayer(documentState, layerId, layer => ({ ...layer, dataUrl }))
-}
-
 function pointInRect(point: Point, rect: Rect): boolean {
   return point.x >= rect.x && point.y >= rect.y && point.x <= rect.x + rect.width && point.y <= rect.y + rect.height
 }
@@ -185,15 +221,6 @@ function clamp(value: number, min: number, max: number): number {
 
 function getLayerRect(layer: ImageLayer): Rect {
   return { x: layer.x, y: layer.y, width: layer.width, height: layer.height }
-}
-
-function getSelectionDocumentRect(layer: ImageLayer, selection: PixelSelection): Rect {
-  return {
-    x: layer.x + (selection.x / layer.pixelWidth) * layer.width,
-    y: layer.y + (selection.y / layer.pixelHeight) * layer.height,
-    width: (selection.width / layer.pixelWidth) * layer.width,
-    height: (selection.height / layer.pixelHeight) * layer.height,
-  }
 }
 
 function getHandles(layer: ImageLayer): Array<{ handle: ResizeHandle; rect: Rect }> {
@@ -237,20 +264,12 @@ function getPointerOnCanvas(event: React.PointerEvent<HTMLCanvasElement>, canvas
   }
 }
 
-function documentPointToLayerPixel(point: Point, layer: ImageLayer): Point {
+function clampSelectionToDocument(selection: PixelSelection, documentState: EditorDocument): PixelSelection {
+  const x = clamp(Math.round(selection.x), 0, documentState.width - 1)
+  const y = clamp(Math.round(selection.y), 0, documentState.height - 1)
+  const width = clamp(Math.round(selection.width), 1, documentState.width - x)
+  const height = clamp(Math.round(selection.height), 1, documentState.height - y)
   return {
-    x: ((point.x - layer.x) / layer.width) * layer.pixelWidth,
-    y: ((point.y - layer.y) / layer.height) * layer.pixelHeight,
-  }
-}
-
-function clampSelectionToLayer(selection: PixelSelection, layer: ImageLayer): PixelSelection {
-  const x = clamp(Math.round(selection.x), 0, layer.pixelWidth - 1)
-  const y = clamp(Math.round(selection.y), 0, layer.pixelHeight - 1)
-  const width = clamp(Math.round(selection.width), 1, layer.pixelWidth - x)
-  const height = clamp(Math.round(selection.height), 1, layer.pixelHeight - y)
-  return {
-    layerId: selection.layerId,
     x,
     y,
     width,
@@ -258,27 +277,199 @@ function clampSelectionToLayer(selection: PixelSelection, layer: ImageLayer): Pi
   }
 }
 
-function selectionFromDrag(layer: ImageLayer, start: Point, current: Point): PixelSelection {
-  const normalized = normalizeRect(documentPointToLayerPixel(start, layer), documentPointToLayerPixel(current, layer))
-  return clampSelectionToLayer(
-    {
-      layerId: layer.id,
-      x: normalized.x,
-      y: normalized.y,
-      width: normalized.width,
-      height: normalized.height,
-    },
-    layer
-  )
+function selectionFromDrag(documentState: EditorDocument, start: Point, current: Point): PixelSelection {
+  const normalized = normalizeRect(start, current)
+  return clampSelectionToDocument(normalized, documentState)
 }
 
 function formatPixels(value: number): string {
   return `${Math.round(value)} px`
 }
 
-function getNormalizedMovementStep(value: string): number {
-  const step = Math.max(1, Math.round(Number(value)))
-  return Number.isFinite(step) ? step : 1
+function parseMathExpression(value: string, variables: ExpressionVariables = {}): number | null {
+  const input = value.trim()
+  if (!input) return null
+
+  const matchedTokens = input.match(/[A-Za-z_][A-Za-z0-9_]*|\d*\.\d+|\d+|[()+\-*/%]/g)
+  if (!matchedTokens || matchedTokens.join('') !== input.replace(/\s+/g, '')) {
+    return null
+  }
+
+  const tokens = matchedTokens
+
+  let index = 0
+
+  function parseExpression(): number | null {
+    let result = parseTerm()
+    if (result === null) return null
+
+    while (index < tokens.length) {
+      const operator = tokens[index]
+      if (operator !== '+' && operator !== '-') break
+      index += 1
+      const right = parseTerm()
+      if (right === null) return null
+      result = operator === '+' ? result + right : result - right
+    }
+
+    return result
+  }
+
+  function parseTerm(): number | null {
+    let result = parseFactor()
+    if (result === null) return null
+
+    while (index < tokens.length) {
+      const operator = tokens[index]
+      if (operator !== '*' && operator !== '/' && operator !== '%') break
+      index += 1
+      const right = parseFactor()
+      if (right === null) return null
+      if ((operator === '/' || operator === '%') && right === 0) return null
+      if (operator === '*') {
+        result *= right
+      } else if (operator === '/') {
+        result /= right
+      } else {
+        result %= right
+      }
+    }
+
+    return result
+  }
+
+  function parseFactor(): number | null {
+    const token = tokens[index]
+    if (!token) return null
+
+    if (token === '+') {
+      index += 1
+      return parseFactor()
+    }
+
+    if (token === '-') {
+      index += 1
+      const value = parseFactor()
+      return value === null ? null : -value
+    }
+
+    if (token === '(') {
+      index += 1
+      const value = parseExpression()
+      if (value === null || tokens[index] !== ')') return null
+      index += 1
+      return value
+    }
+
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(token)) {
+      index += 1
+      const variable = variables[token]
+      return variable === undefined || !Number.isFinite(variable) ? null : variable
+    }
+
+    index += 1
+    const value = Number(token)
+    return Number.isFinite(value) ? value : null
+  }
+
+  const result = parseExpression()
+  if (result === null || index !== tokens.length || !Number.isFinite(result)) {
+    return null
+  }
+
+  return result
+}
+
+function parseRoundedMathExpression(value: string, variables: ExpressionVariables = {}): number | null {
+  const result = parseMathExpression(value, variables)
+  if (result === null) return null
+  const rounded = Math.round(result)
+  return Number.isFinite(rounded) ? rounded : null
+}
+
+function isValidVariableName(value: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value)
+}
+
+function resolveCustomVariables(variableDrafts: CustomVariableDraft[], baseVariables: ExpressionVariables): {
+  variables: ExpressionVariables
+  errors: Record<string, string>
+} {
+  const variables: ExpressionVariables = { ...baseVariables }
+  const errors: Record<string, string> = {}
+  const draftByName = new Map<string, CustomVariableDraft>()
+
+  for (const variable of variableDrafts) {
+    const trimmedName = variable.name.trim()
+    if (!trimmedName) {
+      errors[variable.id] = 'Variable name is required'
+      continue
+    }
+    if (!isValidVariableName(trimmedName)) {
+      errors[variable.id] = 'Use letters, numbers, and underscores only'
+      continue
+    }
+    if (trimmedName in baseVariables) {
+      errors[variable.id] = 'Name conflicts with a built-in variable'
+      continue
+    }
+    if (draftByName.has(trimmedName)) {
+      errors[variable.id] = 'Variable names must be unique'
+      const existingDraft = draftByName.get(trimmedName)
+      if (existingDraft) {
+        errors[existingDraft.id] = 'Variable names must be unique'
+      }
+      continue
+    }
+    draftByName.set(trimmedName, { ...variable, name: trimmedName })
+  }
+
+  const visiting = new Set<string>()
+  const resolved = new Set<string>()
+
+  function resolveVariable(name: string): number | null {
+    if (name in baseVariables) return baseVariables[name]
+    if (resolved.has(name)) return variables[name] ?? null
+    const draft = draftByName.get(name)
+    if (!draft) return null
+    if (errors[draft.id]) return null
+    if (visiting.has(name)) {
+      errors[draft.id] = 'Circular variable reference'
+      return null
+    }
+
+    visiting.add(name)
+    const scopedVariables = new Proxy(variables, {
+      get(target, property) {
+        if (typeof property !== 'string') return undefined
+        if (property in target) return target[property]
+        const resolvedValue = resolveVariable(property)
+        return resolvedValue === null ? undefined : resolvedValue
+      },
+      has(target, property) {
+        if (typeof property !== 'string') return false
+        return property in target || draftByName.has(property)
+      },
+    }) as ExpressionVariables
+
+    const result = parseMathExpression(draft.expression, scopedVariables)
+    visiting.delete(name)
+
+    if (result === null || !Number.isFinite(result)) {
+      errors[draft.id] = 'Expression could not be resolved'
+      return null
+    }
+
+    variables[name] = result
+    resolved.add(name)
+    return result
+  }
+
+  for (const name of draftByName.keys()) {
+    resolveVariable(name)
+  }
+
+  return { variables, errors }
 }
 
 function snapToStep(value: number, step: number): number {
@@ -305,8 +496,10 @@ export function EditorApp() {
   const [pasteSizeDraft, setPasteSizeDraft] = useState<PasteSizeDraftState>({ width: '', height: '' })
   const [movementStep, setMovementStep] = useState(DEFAULT_EDITOR_SESSION.movementStep)
   const [movementStepDraft, setMovementStepDraft] = useState(DEFAULT_EDITOR_SESSION.movementStep)
+  const [customVariables, setCustomVariables] = useState<CustomVariableDraft[]>(DEFAULT_EDITOR_SESSION.variables)
   const [layerPositionDraft, setLayerPositionDraft] = useState<LayerPositionDraftState | null>(null)
   const [layerSizeDraft, setLayerSizeDraft] = useState<LayerSizeDraftState | null>(null)
+  const [selectionDraft, setSelectionDraft] = useState<SelectionDraftState | null>(null)
   const [projectNameDraft, setProjectNameDraft] = useState<ProjectNameDraftState>({ value: 'Untitled Project' })
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -323,9 +516,47 @@ export function EditorApp() {
   const imageCacheRef = useRef(new Map<string, HTMLImageElement>())
   const isHydratingProjectRef = useRef(true)
   const autosaveTimeoutRef = useRef<number | null>(null)
+  const pendingDraftSyncRef = useRef<PendingDraftSyncState>({
+    layerPosition: null,
+    layerSize: null,
+    selection: null,
+    pasteSize: null,
+  })
   const [imageRevision, setImageRevision] = useState(0)
 
   const activeLayer = useMemo(() => getActiveLayer(documentState), [documentState])
+  const canvasExpressionVariables = useMemo<ExpressionVariables>(
+    () => ({
+      canvasWidth: documentState?.width ?? 0,
+      canvasHeight: documentState?.height ?? 0,
+    }),
+    [documentState?.height, documentState?.width]
+  )
+  const resolvedCustomVariables = useMemo(
+    () => resolveCustomVariables(customVariables, canvasExpressionVariables),
+    [canvasExpressionVariables, customVariables]
+  )
+  const resolvedExpressionVariables = resolvedCustomVariables.variables
+  const activeLayerExpressionVariables = useMemo<ExpressionVariables>(
+    () => ({
+      ...resolvedExpressionVariables,
+      imageX: activeLayer?.x ?? 0,
+      imageY: activeLayer?.y ?? 0,
+      imageWidth: activeLayer?.width ?? 0,
+      imageHeight: activeLayer?.height ?? 0,
+    }),
+    [activeLayer, resolvedExpressionVariables]
+  )
+  const selectionExpressionVariables = useMemo<ExpressionVariables>(
+    () => ({
+      ...resolvedExpressionVariables,
+      selectionX: documentState?.selection?.x ?? 0,
+      selectionY: documentState?.selection?.y ?? 0,
+      selectionWidth: documentState?.selection?.width ?? 0,
+      selectionHeight: documentState?.selection?.height ?? 0,
+    }),
+    [documentState?.selection, resolvedExpressionVariables]
+  )
 
   function applyProjectState(args: {
     nextProjectPath: string | null
@@ -335,6 +566,12 @@ export function EditorApp() {
     nextTool: EditorTool
     nextCanvasDraft: CanvasDraftState
     nextMovementStep: string
+    nextMovementStepDraft: string
+    nextPasteSizeDraft: PasteSizeDraftState
+    nextLayerPositionDraft: LayerPositionDraftState | null
+    nextLayerSizeDraft: LayerSizeDraftState | null
+    nextSelectionDraft: SelectionDraftState | null
+    nextVariables: CustomVariableDraft[]
   }) {
     isHydratingProjectRef.current = true
     setProjectPath(args.nextProjectPath)
@@ -345,15 +582,20 @@ export function EditorApp() {
     setTool(args.nextTool)
     setCanvasDraft(args.nextCanvasDraft)
     setMovementStep(args.nextMovementStep)
-    setMovementStepDraft(args.nextMovementStep)
+    setMovementStepDraft(args.nextMovementStepDraft)
+    setCustomVariables(args.nextVariables)
+    pendingDraftSyncRef.current = {
+      layerPosition: args.nextLayerPositionDraft,
+      layerSize: args.nextLayerSizeDraft,
+      selection: args.nextSelectionDraft,
+      pasteSize: args.nextPasteSizeDraft,
+    }
     setInteraction(null)
     setSelectionPreview(null)
-    setLayerPositionDraft(null)
-    setLayerSizeDraft(null)
-    setPasteSizeDraft({
-      width: args.nextDocumentState?.pasteWidth === null ? '' : String(args.nextDocumentState?.pasteWidth ?? ''),
-      height: args.nextDocumentState?.pasteHeight === null ? '' : String(args.nextDocumentState?.pasteHeight ?? ''),
-    })
+    setLayerPositionDraft(args.nextLayerPositionDraft)
+    setLayerSizeDraft(args.nextLayerSizeDraft)
+    setSelectionDraft(args.nextSelectionDraft)
+    setPasteSizeDraft(args.nextPasteSizeDraft)
     setHasUnsavedChanges(false)
   }
 
@@ -387,6 +629,12 @@ export function EditorApp() {
         nextTool: loadedProject.ui.tool,
         nextCanvasDraft: loadedProject.ui.canvasDraft,
         nextMovementStep: loadedProject.ui.movementStep,
+        nextMovementStepDraft: loadedProject.ui.movementStepDraft,
+        nextPasteSizeDraft: loadedProject.ui.pasteSizeDraft,
+        nextLayerPositionDraft: loadedProject.ui.layerPositionDraft,
+        nextLayerSizeDraft: loadedProject.ui.layerSizeDraft,
+        nextSelectionDraft: loadedProject.ui.selectionDraft,
+        nextVariables: loadedProject.ui.variables,
       })
       await refreshRecentProjects()
     } catch (error) {
@@ -406,6 +654,12 @@ export function EditorApp() {
           tool,
           canvasDraft,
           movementStep,
+          movementStepDraft,
+          pasteSizeDraft,
+          layerPositionDraft,
+          layerSizeDraft,
+          selectionDraft,
+          variables: customVariables,
         },
       })
 
@@ -437,6 +691,12 @@ export function EditorApp() {
           tool,
           canvasDraft,
           movementStep,
+          movementStepDraft,
+          pasteSizeDraft,
+          layerPositionDraft,
+          layerSizeDraft,
+          selectionDraft,
+          variables: customVariables,
         },
       })
 
@@ -488,6 +748,12 @@ export function EditorApp() {
         nextTool: loadedProject.ui.tool,
         nextCanvasDraft: loadedProject.ui.canvasDraft,
         nextMovementStep: loadedProject.ui.movementStep,
+        nextMovementStepDraft: loadedProject.ui.movementStepDraft,
+        nextPasteSizeDraft: loadedProject.ui.pasteSizeDraft,
+        nextLayerPositionDraft: loadedProject.ui.layerPositionDraft,
+        nextLayerSizeDraft: loadedProject.ui.layerSizeDraft,
+        nextSelectionDraft: loadedProject.ui.selectionDraft,
+        nextVariables: loadedProject.ui.variables,
       })
       await refreshRecentProjects()
     } catch (error) {
@@ -510,6 +776,12 @@ export function EditorApp() {
       nextTool: DEFAULT_EDITOR_SESSION.tool,
       nextCanvasDraft: { width: String(width), height: String(height) },
       nextMovementStep: DEFAULT_EDITOR_SESSION.movementStep,
+      nextMovementStepDraft: DEFAULT_EDITOR_SESSION.movementStepDraft,
+      nextPasteSizeDraft: DEFAULT_EDITOR_SESSION.pasteSizeDraft,
+      nextLayerPositionDraft: DEFAULT_EDITOR_SESSION.layerPositionDraft,
+      nextLayerSizeDraft: DEFAULT_EDITOR_SESSION.layerSizeDraft,
+      nextSelectionDraft: DEFAULT_EDITOR_SESSION.selectionDraft,
+      nextVariables: DEFAULT_EDITOR_SESSION.variables,
     })
     setHasUnsavedChanges(true)
   }
@@ -527,7 +799,170 @@ export function EditorApp() {
   }
 
   function applyMovementStep() {
-    setMovementStep(String(getNormalizedMovementStep(movementStepDraft)))
+    const movementStepVariables = documentState
+      ? resolveCustomVariables(customVariables, {
+          canvasWidth: documentState.width,
+          canvasHeight: documentState.height,
+        }).variables
+      : resolvedExpressionVariables
+    const parsedMovementStep = parseRoundedMathExpression(movementStepDraft, movementStepVariables)
+    const nextMovementStep = Math.max(1, parsedMovementStep ?? Number.NaN)
+    if (!Number.isFinite(nextMovementStep)) {
+      setErrorMessage('Movement step must be a valid number or math expression')
+      return
+    }
+    setMovementStep(String(nextMovementStep))
+  }
+
+  function addCustomVariable() {
+    setCustomVariables(current => [...current, { id: crypto.randomUUID(), name: '', expression: '' }])
+  }
+
+  function updateCustomVariable(variableId: string, changes: Partial<CustomVariableDraft>) {
+    setCustomVariables(current =>
+      current.map(variable => (variable.id === variableId ? { ...variable, ...changes } : variable))
+    )
+  }
+
+  function removeCustomVariable(variableId: string) {
+    setCustomVariables(current => current.filter(variable => variable.id !== variableId))
+  }
+
+  function applyCustomVariables() {
+    if (Object.keys(resolvedCustomVariables.errors).length > 0) {
+      setErrorMessage('Fix variable errors before applying them')
+      return
+    }
+
+    let nextDocument = documentState ? cloneDocument(documentState) : null
+    let didDocumentChange = false
+
+    if (nextDocument) {
+      const nextCanvasVariables = resolveCustomVariables(customVariables, {
+        canvasWidth: nextDocument.width,
+        canvasHeight: nextDocument.height,
+      }).variables
+      const nextWidth = parseRoundedMathExpression(canvasDraft.width, nextCanvasVariables)
+      const nextHeight = parseRoundedMathExpression(canvasDraft.height, nextCanvasVariables)
+      if (nextWidth !== null && nextHeight !== null && Number.isFinite(nextWidth) && Number.isFinite(nextHeight)) {
+        const width = Math.max(1, nextWidth)
+        const height = Math.max(1, nextHeight)
+        if (width !== nextDocument.width || height !== nextDocument.height) {
+          nextDocument.width = width
+          nextDocument.height = height
+          didDocumentChange = true
+        }
+      }
+
+      const resolvedVariables = resolveCustomVariables(customVariables, {
+        canvasWidth: nextDocument.width,
+        canvasHeight: nextDocument.height,
+      }).variables
+
+      const parsedPasteWidth = pasteSizeDraft.width.trim().length
+        ? parseRoundedMathExpression(pasteSizeDraft.width, resolvedVariables)
+        : null
+      const parsedPasteHeight = pasteSizeDraft.height.trim().length
+        ? parseRoundedMathExpression(pasteSizeDraft.height, resolvedVariables)
+        : null
+      const nextPasteWidth = parsedPasteWidth === null ? null : Math.max(1, parsedPasteWidth)
+      const nextPasteHeight = parsedPasteHeight === null ? null : Math.max(1, parsedPasteHeight)
+      if (nextPasteWidth !== nextDocument.pasteWidth || nextPasteHeight !== nextDocument.pasteHeight) {
+        nextDocument.pasteWidth = nextPasteWidth
+        nextDocument.pasteHeight = nextPasteHeight
+        didDocumentChange = true
+      }
+
+      if (layerPositionDraft) {
+        const layer = nextDocument.layers.find(item => item.id === layerPositionDraft.layerId)
+        if (layer) {
+          const layerVariables = {
+            ...resolvedVariables,
+            imageX: layer.x,
+            imageY: layer.y,
+            imageWidth: layer.width,
+            imageHeight: layer.height,
+          }
+          const parsedX = parseRoundedMathExpression(layerPositionDraft.x, layerVariables)
+          const parsedY = parseRoundedMathExpression(layerPositionDraft.y, layerVariables)
+          const nextX = snapToStep(parsedX ?? Number.NaN, normalizedMovementStep)
+          const nextY = snapToStep(parsedY ?? Number.NaN, normalizedMovementStep)
+          if (Number.isFinite(nextX) && Number.isFinite(nextY) && (nextX !== layer.x || nextY !== layer.y)) {
+            layer.x = nextX
+            layer.y = nextY
+            didDocumentChange = true
+          }
+        }
+      }
+
+      if (layerSizeDraft) {
+        const layer = nextDocument.layers.find(item => item.id === layerSizeDraft.layerId)
+        if (layer) {
+          const layerVariables = {
+            ...resolvedVariables,
+            imageX: layer.x,
+            imageY: layer.y,
+            imageWidth: layer.width,
+            imageHeight: layer.height,
+          }
+          const nextWidth = Math.max(1, parseRoundedMathExpression(layerSizeDraft.width, layerVariables) ?? Number.NaN)
+          const nextHeight = Math.max(1, parseRoundedMathExpression(layerSizeDraft.height, layerVariables) ?? Number.NaN)
+          if (Number.isFinite(nextWidth) && Number.isFinite(nextHeight) && (nextWidth !== layer.width || nextHeight !== layer.height)) {
+            layer.width = nextWidth
+            layer.height = nextHeight
+            didDocumentChange = true
+          }
+        }
+      }
+
+      if (nextDocument.selection && selectionDraft) {
+        const selectionVariables = {
+          ...resolvedVariables,
+          selectionX: nextDocument.selection.x,
+          selectionY: nextDocument.selection.y,
+          selectionWidth: nextDocument.selection.width,
+          selectionHeight: nextDocument.selection.height,
+        }
+        const nextSelection = clampSelectionToDocument(
+          {
+            x: parseRoundedMathExpression(selectionDraft.x, selectionVariables) ?? nextDocument.selection.x,
+            y: parseRoundedMathExpression(selectionDraft.y, selectionVariables) ?? nextDocument.selection.y,
+            width: Math.max(1, parseRoundedMathExpression(selectionDraft.width, selectionVariables) ?? nextDocument.selection.width),
+            height: Math.max(1, parseRoundedMathExpression(selectionDraft.height, selectionVariables) ?? nextDocument.selection.height),
+          },
+          nextDocument
+        )
+
+        if (JSON.stringify(nextSelection) !== JSON.stringify(nextDocument.selection)) {
+          nextDocument.selection = nextSelection
+          didDocumentChange = true
+        }
+      } else if (nextDocument.selection) {
+        const clampedSelection = clampSelectionToDocument(nextDocument.selection, nextDocument)
+        if (JSON.stringify(clampedSelection) !== JSON.stringify(nextDocument.selection)) {
+          nextDocument.selection = clampedSelection
+          didDocumentChange = true
+        }
+      }
+    }
+
+    const parsedMovementStep = parseRoundedMathExpression(movementStepDraft, resolvedExpressionVariables)
+    const nextMovementStep = parsedMovementStep === null ? null : Math.max(1, parsedMovementStep)
+    const didMovementStepChange = nextMovementStep !== null && String(nextMovementStep) !== movementStep
+
+    pendingDraftSyncRef.current = {
+      layerPosition: layerPositionDraft,
+      layerSize: layerSizeDraft,
+      selection: selectionDraft,
+      pasteSize: pasteSizeDraft,
+    }
+
+    if (didMovementStepChange) {
+      setMovementStep(String(nextMovementStep))
+    }
+    if (documentState && nextDocument && didDocumentChange) {
+      pushHistory('Apply variables', documentState, nextDocument)
+    }
   }
 
   useEffect(() => {
@@ -550,6 +985,12 @@ export function EditorApp() {
     }
 
     setLayerPositionDraft(current => {
+      const pendingDraft = pendingDraftSyncRef.current.layerPosition
+      if (pendingDraft?.layerId === activeLayer.id) {
+        pendingDraftSyncRef.current.layerPosition = null
+        return pendingDraft
+      }
+
       if (
         current?.layerId === activeLayer.id &&
         current.x === String(Math.round(activeLayer.x)) &&
@@ -566,6 +1007,12 @@ export function EditorApp() {
     })
 
     setLayerSizeDraft(current => {
+      const pendingDraft = pendingDraftSyncRef.current.layerSize
+      if (pendingDraft?.layerId === activeLayer.id) {
+        pendingDraftSyncRef.current.layerSize = null
+        return pendingDraft
+      }
+
       if (
         current?.layerId === activeLayer.id &&
         current.width === String(Math.round(activeLayer.width)) &&
@@ -583,7 +1030,51 @@ export function EditorApp() {
   }, [activeLayer])
 
   useEffect(() => {
+    if (!documentState?.selection) {
+      setSelectionDraft(null)
+      return
+    }
+
+    const selection = documentState.selection
+
+    setSelectionDraft(current => {
+      const pendingDraft = pendingDraftSyncRef.current.selection
+      if (pendingDraft) {
+        pendingDraftSyncRef.current.selection = null
+        return pendingDraft
+      }
+
+      const nextDraft = {
+        x: String(Math.round(selection.x)),
+        y: String(Math.round(selection.y)),
+        width: String(Math.round(selection.width)),
+        height: String(Math.round(selection.height)),
+      }
+
+      if (
+        current &&
+        current.x === nextDraft.x &&
+        current.y === nextDraft.y &&
+        current.width === nextDraft.width &&
+        current.height === nextDraft.height
+      ) {
+        return current
+      }
+
+      return nextDraft
+    })
+  }, [documentState?.selection])
+
+  useEffect(() => {
     if (!documentState) return
+
+    const pendingDraft = pendingDraftSyncRef.current.pasteSize
+    if (pendingDraft) {
+      pendingDraftSyncRef.current.pasteSize = null
+      setPasteSizeDraft(pendingDraft)
+      return
+    }
+
     setPasteSizeDraft({
       width: documentState.pasteWidth === null ? '' : String(documentState.pasteWidth),
       height: documentState.pasteHeight === null ? '' : String(documentState.pasteHeight),
@@ -613,10 +1104,16 @@ export function EditorApp() {
         window.clearTimeout(autosaveTimeoutRef.current)
       }
     }
-  }, [canvasDraft, documentState, history, interaction, movementStep, projectName, projectPath, tool])
+  }, [canvasDraft, customVariables, documentState, history, interaction, movementStep, projectName, projectPath, tool])
 
-  const normalizedMovementStep = useMemo(() => getNormalizedMovementStep(movementStep), [movementStep])
-  const normalizedMovementStepDraft = useMemo(() => getNormalizedMovementStep(movementStepDraft), [movementStepDraft])
+  const normalizedMovementStep = useMemo(
+    () => Math.max(1, parseRoundedMathExpression(movementStep, resolvedExpressionVariables) ?? 1),
+    [movementStep, resolvedExpressionVariables]
+  )
+  const normalizedMovementStepDraft = useMemo(
+    () => Math.max(1, parseRoundedMathExpression(movementStepDraft, resolvedExpressionVariables) ?? 1),
+    [movementStepDraft, resolvedExpressionVariables]
+  )
 
   const viewportScale = useMemo(() => {
     if (!documentState) return 1
@@ -632,7 +1129,6 @@ export function EditorApp() {
     async function ensureImages() {
       const urls = new Set(currentDocumentState.layers.map(layer => layer.dataUrl))
       if (selectionPreview) {
-        urls.add(selectionPreview.layerDataUrl)
         urls.add(selectionPreview.floatingDataUrl)
       }
 
@@ -676,8 +1172,7 @@ export function EditorApp() {
 
     for (const layer of documentState.layers) {
       if (!layer.visible) continue
-      const sourceUrl = selectionPreview?.layerId === layer.id ? selectionPreview.layerDataUrl : layer.dataUrl
-      const image = imageCacheRef.current.get(sourceUrl)
+      const image = imageCacheRef.current.get(layer.dataUrl)
       if (!image) continue
       mainContext.save()
       mainContext.globalAlpha = layer.opacity
@@ -686,10 +1181,10 @@ export function EditorApp() {
       mainContext.restore()
     }
 
-    if (selectionPreview && activeLayer?.id === selectionPreview.layerId) {
+    if (selectionPreview) {
       const floatingImage = imageCacheRef.current.get(selectionPreview.floatingDataUrl)
       if (floatingImage) {
-        const rect = getSelectionDocumentRect(activeLayer, selectionPreview.selection)
+        const rect = selectionPreview.selection
         mainContext.drawImage(floatingImage, rect.x, rect.y, rect.width, rect.height)
       }
     }
@@ -716,8 +1211,8 @@ export function EditorApp() {
       }
     }
 
-    if (documentState.selection && activeLayer && documentState.selection.layerId === activeLayer.id) {
-      const selectionRect = getSelectionDocumentRect(activeLayer, documentState.selection)
+    if (documentState.selection) {
+      const selectionRect = documentState.selection
       overlayContext.save()
       overlayContext.fillStyle = 'rgba(95, 157, 255, 0.12)'
       overlayContext.strokeStyle = '#8fc7ff'
@@ -756,7 +1251,6 @@ export function EditorApp() {
   }
 
   function setCanvasSize(width: number, height: number) {
-    setCanvasDraft({ width: String(width), height: String(height) })
     if (!documentState) {
       createNewDocument(width, height)
       return
@@ -769,17 +1263,20 @@ export function EditorApp() {
 
     const hasWidth = widthValue.trim().length > 0
     const hasHeight = heightValue.trim().length > 0
-    const pasteWidth = hasWidth ? Math.max(1, Math.round(Number(widthValue))) : null
-    const pasteHeight = hasHeight ? Math.max(1, Math.round(Number(heightValue))) : null
+    const parsedWidth = hasWidth ? parseRoundedMathExpression(widthValue, resolvedExpressionVariables) : null
+    const parsedHeight = hasHeight ? parseRoundedMathExpression(heightValue, resolvedExpressionVariables) : null
+    const pasteWidth = parsedWidth === null ? null : Math.max(1, parsedWidth)
+    const pasteHeight = parsedHeight === null ? null : Math.max(1, parsedHeight)
     if ((hasWidth && pasteWidth === null) || (hasHeight && pasteHeight === null)) {
-      setErrorMessage('Paste width and height must be valid numbers when provided')
+      setErrorMessage('Paste width and height must be valid numbers or simple math expressions when provided')
       return
     }
     if ((hasWidth && !Number.isFinite(pasteWidth)) || (hasHeight && !Number.isFinite(pasteHeight))) {
-      setErrorMessage('Paste width and height must be valid numbers when provided')
+      setErrorMessage('Paste width and height must be valid numbers or simple math expressions when provided')
       return
     }
 
+    pendingDraftSyncRef.current.pasteSize = { width: widthValue, height: heightValue }
     setDocumentState({
       ...documentState,
       pasteWidth,
@@ -824,7 +1321,7 @@ export function EditorApp() {
       ...documentState,
       layers: nextLayers,
       activeLayerId: nextActiveLayerId,
-      selection: documentState.selection?.layerId === layerId ? null : documentState.selection,
+      selection: documentState.selection,
     }
 
     pushHistory('Delete image', documentState, nextDocument)
@@ -904,6 +1401,17 @@ export function EditorApp() {
       },
       label: '[Editor] Save final image',
     },
+    documentState?.selection && {
+      code: [
+        { code: 'KeyC', metaKey: true },
+        { code: 'KeyC', ctrlKey: true },
+      ],
+      handler: event => {
+        event?.preventDefault()
+        void copySelectionToClipboard()
+      },
+      label: '[Editor] Copy selection',
+    },
     activeLayer && {
       code: ['Backspace', 'Delete'],
       handler: event => {
@@ -934,24 +1442,24 @@ export function EditorApp() {
     setSelectionPreview(null)
   }
 
-  async function startSelectionMove(selection: PixelSelection, layer: ImageLayer, pointer: Point) {
+  async function startSelectionMove(selection: PixelSelection, pointer: Point) {
     if (!documentState) return
     const currentDocument = cloneDocument(documentState)
-    const draft = await cutSelectionFromLayer(layer, selection)
-    setDocumentState(replaceActiveLayerData(currentDocument, layer.id, draft.cutLayerDataUrl))
+    const draft = await cutSelectionFromDocument(currentDocument, selection)
+    setDocumentState({
+      ...currentDocument,
+      layers: draft.layers,
+      selection,
+    })
     setSelectionPreview({
-      layerId: layer.id,
       floatingDataUrl: draft.floatingDataUrl,
-      layerDataUrl: draft.cutLayerDataUrl,
       selection,
     })
     setInteraction({
       type: 'moving-selection',
       initialDocument: cloneDocument(documentState),
-      layerId: layer.id,
       selectionStart: selection,
       pointerStart: pointer,
-      cutLayerDataUrl: draft.cutLayerDataUrl,
       floatingDataUrl: draft.floatingDataUrl,
     })
   }
@@ -1045,28 +1553,21 @@ export function EditorApp() {
 
   function updateSelectionCreation(pointer: Point) {
     if (!interaction || interaction.type !== 'creating-selection' || !documentState) return
-    const layer = documentState.layers.find(currentLayer => currentLayer.id === interaction.layerId)
-    if (!layer) return
-    const selection = selectionFromDrag(layer, interaction.start, pointer)
-    setDocumentState({ ...documentState, activeLayerId: layer.id, selection })
+    const selection = selectionFromDrag(documentState, interaction.start, pointer)
+    setDocumentState({ ...documentState, selection })
   }
 
   function updateSelectionMove(pointer: Point) {
     if (!interaction || interaction.type !== 'moving-selection' || !documentState || !selectionPreview) return
-    const layer = documentState.layers.find(currentLayer => currentLayer.id === interaction.layerId)
-    if (!layer) return
-
-    const deltaDocumentX = pointer.x - interaction.pointerStart.x
-    const deltaDocumentY = pointer.y - interaction.pointerStart.y
-    const deltaPixelX = Math.round((deltaDocumentX / layer.width) * layer.pixelWidth)
-    const deltaPixelY = Math.round((deltaDocumentY / layer.height) * layer.pixelHeight)
-    const maxX = layer.pixelWidth - interaction.selectionStart.width
-    const maxY = layer.pixelHeight - interaction.selectionStart.height
+    const deltaDocumentX = Math.round(pointer.x - interaction.pointerStart.x)
+    const deltaDocumentY = Math.round(pointer.y - interaction.pointerStart.y)
+    const maxX = documentState.width - interaction.selectionStart.width
+    const maxY = documentState.height - interaction.selectionStart.height
 
     const selection = {
       ...interaction.selectionStart,
-      x: clamp(interaction.selectionStart.x + deltaPixelX, 0, Math.max(0, maxX)),
-      y: clamp(interaction.selectionStart.y + deltaPixelY, 0, Math.max(0, maxY)),
+      x: clamp(interaction.selectionStart.x + deltaDocumentX, 0, Math.max(0, maxX)),
+      y: clamp(interaction.selectionStart.y + deltaDocumentY, 0, Math.max(0, maxY)),
     }
 
     setDocumentState({ ...documentState, selection })
@@ -1080,27 +1581,36 @@ export function EditorApp() {
     if (!interaction || interaction.type !== 'moving-selection' || !documentState || !documentState.selection) return
     if (
       documentState.selection.x === interaction.selectionStart.x &&
-      documentState.selection.y === interaction.selectionStart.y
+      documentState.selection.y === interaction.selectionStart.y &&
+      documentState.selection.width === interaction.selectionStart.width &&
+      documentState.selection.height === interaction.selectionStart.height
     ) {
       setDocumentState(cloneDocument(interaction.initialDocument))
       setSelectionPreview(null)
       setInteraction(null)
       return
     }
-    const layer = documentState.layers.find(currentLayer => currentLayer.id === interaction.layerId)
-    if (!layer) return
-
-    const dataUrl = await applyFloatingSelectionToLayer({
-      layer,
-      cutLayerDataUrl: interaction.cutLayerDataUrl,
-      floatingDataUrl: interaction.floatingDataUrl,
-      destinationX: documentState.selection.x,
-      destinationY: documentState.selection.y,
+    const nextLayer: ImageLayer = {
+      id: crypto.randomUUID(),
+      name: 'Selection',
+      visible: true,
+      opacity: 1,
+      x: documentState.selection.x,
+      y: documentState.selection.y,
       width: documentState.selection.width,
       height: documentState.selection.height,
-    })
+      pixelWidth: interaction.selectionStart.width,
+      pixelHeight: interaction.selectionStart.height,
+      dataUrl: interaction.floatingDataUrl,
+    }
 
-    const nextDocument = replaceActiveLayerData(documentState, layer.id, dataUrl)
+    const nextDocument: EditorDocument = {
+      ...documentState,
+      layers: [...documentState.layers, nextLayer],
+      activeLayerId: nextLayer.id,
+      selection: documentState.selection,
+    }
+
     setDocumentState(nextDocument)
     setSelectionPreview(null)
     setHistory(current => ({
@@ -1143,26 +1653,17 @@ export function EditorApp() {
 
     if (tool === 'marquee') {
       const currentSelection = documentState.selection
-      if (currentSelection && activeLayer && currentSelection.layerId === activeLayer.id) {
-        const selectionRect = getSelectionDocumentRect(activeLayer, currentSelection)
-        if (pointInRect(pointer, selectionRect)) {
-          await startSelectionMove(currentSelection, activeLayer, pointer)
-          return
-        }
-      }
-
-      if (layer) {
-        setDocumentState({ ...documentState, activeLayerId: layer.id, selection: null })
-        setInteraction({
-          type: 'creating-selection',
-          initialDocument: cloneDocument(documentState),
-          layerId: layer.id,
-          start: pointer,
-        })
+      if (currentSelection && pointInRect(pointer, currentSelection)) {
+        await startSelectionMove(currentSelection, pointer)
         return
       }
 
-      setDocumentState({ ...documentState, selection: null })
+      setDocumentState({ ...documentState, activeLayerId: layer?.id ?? documentState.activeLayerId, selection: null })
+      setInteraction({
+        type: 'creating-selection',
+        initialDocument: cloneDocument(documentState),
+        start: pointer,
+      })
     }
   }
 
@@ -1212,8 +1713,6 @@ export function EditorApp() {
     cancelInteraction()
   }
 
-  const layerMenu = useContextMenu<string>()
-
   function openSizeDialog(layerId: string) {
     const layer = documentState?.layers.find(item => item.id === layerId)
     if (!layer) return
@@ -1240,16 +1739,23 @@ export function EditorApp() {
     const layer = documentState.layers.find(item => item.id === sizeDialog.layerId)
     if (!layer) return
 
-    let width = Math.max(1, Math.round(Number(sizeDialog.width)))
-    let height = Math.max(1, Math.round(Number(sizeDialog.height)))
+    const sizeDialogVariables: ExpressionVariables = {
+      ...resolvedExpressionVariables,
+      imageX: layer.x,
+      imageY: layer.y,
+      imageWidth: layer.width,
+      imageHeight: layer.height,
+    }
+    let width = Math.max(1, parseRoundedMathExpression(sizeDialog.width, sizeDialogVariables) ?? Number.NaN)
+    let height = Math.max(1, parseRoundedMathExpression(sizeDialog.height, sizeDialogVariables) ?? Number.NaN)
     if (!Number.isFinite(width) || !Number.isFinite(height)) {
-      setErrorMessage('Width and height must be valid numbers')
+      setErrorMessage('Width and height must be valid numbers or simple math expressions')
       return
     }
 
     if (sizeDialog.keepAspectRatio) {
       const ratio = layer.width / layer.height
-      if (sizeDialog.width !== String(Math.round(layer.width))) {
+      if (parseRoundedMathExpression(sizeDialog.width, sizeDialogVariables) !== Math.round(layer.width)) {
         height = Math.max(1, Math.round(width / ratio))
       } else {
         width = Math.max(1, Math.round(height * ratio))
@@ -1271,10 +1777,19 @@ export function EditorApp() {
     const layer = documentState.layers.find(item => item.id === positionDialog.layerId)
     if (!layer) return
 
-    const x = snapToStep(Math.round(Number(positionDialog.x)), normalizedMovementStep)
-    const y = snapToStep(Math.round(Number(positionDialog.y)), normalizedMovementStep)
+    const positionDialogVariables: ExpressionVariables = {
+      ...resolvedExpressionVariables,
+      imageX: layer.x,
+      imageY: layer.y,
+      imageWidth: layer.width,
+      imageHeight: layer.height,
+    }
+    const parsedX = parseRoundedMathExpression(positionDialog.x, positionDialogVariables)
+    const parsedY = parseRoundedMathExpression(positionDialog.y, positionDialogVariables)
+    const x = snapToStep(parsedX ?? Number.NaN, normalizedMovementStep)
+    const y = snapToStep(parsedY ?? Number.NaN, normalizedMovementStep)
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      setErrorMessage('Position coordinates must be valid numbers')
+      setErrorMessage('Position coordinates must be valid numbers or simple math expressions')
       return
     }
 
@@ -1291,10 +1806,12 @@ export function EditorApp() {
   function applyInspectorPosition() {
     if (!documentState || !activeLayer || !layerPositionDraft || layerPositionDraft.layerId !== activeLayer.id) return
 
-    const x = snapToStep(Math.round(Number(layerPositionDraft.x)), normalizedMovementStep)
-    const y = snapToStep(Math.round(Number(layerPositionDraft.y)), normalizedMovementStep)
+    const parsedX = parseRoundedMathExpression(layerPositionDraft.x, activeLayerExpressionVariables)
+    const parsedY = parseRoundedMathExpression(layerPositionDraft.y, activeLayerExpressionVariables)
+    const x = snapToStep(parsedX ?? Number.NaN, normalizedMovementStep)
+    const y = snapToStep(parsedY ?? Number.NaN, normalizedMovementStep)
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      setErrorMessage('Position coordinates must be valid numbers')
+      setErrorMessage('Position coordinates must be valid numbers or simple math expressions')
       return
     }
 
@@ -1304,16 +1821,17 @@ export function EditorApp() {
       y,
     }))
 
+    pendingDraftSyncRef.current.layerPosition = layerPositionDraft
     pushHistory('Set exact position', documentState, nextDocument)
   }
 
   function applyInspectorSize() {
     if (!documentState || !activeLayer || !layerSizeDraft || layerSizeDraft.layerId !== activeLayer.id) return
 
-    const width = Math.max(1, Math.round(Number(layerSizeDraft.width)))
-    const height = Math.max(1, Math.round(Number(layerSizeDraft.height)))
+    const width = Math.max(1, parseRoundedMathExpression(layerSizeDraft.width, activeLayerExpressionVariables) ?? Number.NaN)
+    const height = Math.max(1, parseRoundedMathExpression(layerSizeDraft.height, activeLayerExpressionVariables) ?? Number.NaN)
     if (!Number.isFinite(width) || !Number.isFinite(height)) {
-      setErrorMessage('Width and height must be valid numbers')
+      setErrorMessage('Width and height must be valid numbers or simple math expressions')
       return
     }
 
@@ -1323,7 +1841,100 @@ export function EditorApp() {
       height,
     }))
 
+    pendingDraftSyncRef.current.layerSize = layerSizeDraft
     pushHistory('Set exact size', documentState, nextDocument)
+  }
+
+  function applySelectionPosition() {
+    if (!documentState || !documentState.selection || !selectionDraft) return
+
+    const x = parseRoundedMathExpression(selectionDraft.x, selectionExpressionVariables) ?? Number.NaN
+    const y = parseRoundedMathExpression(selectionDraft.y, selectionExpressionVariables) ?? Number.NaN
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      setErrorMessage('Selection coordinates must be valid numbers or simple math expressions')
+      return
+    }
+
+    const nextSelection = clampSelectionToDocument(
+      {
+        ...documentState.selection,
+        x,
+        y,
+      },
+      documentState
+    )
+
+    pendingDraftSyncRef.current.selection = selectionDraft
+    pushHistory('Set selection position', documentState, {
+      ...documentState,
+      selection: nextSelection,
+    })
+  }
+
+  function applySelectionSize() {
+    if (!documentState || !documentState.selection || !selectionDraft) return
+
+    const width = Math.max(1, parseRoundedMathExpression(selectionDraft.width, selectionExpressionVariables) ?? Number.NaN)
+    const height = Math.max(1, parseRoundedMathExpression(selectionDraft.height, selectionExpressionVariables) ?? Number.NaN)
+    if (!Number.isFinite(width) || !Number.isFinite(height)) {
+      setErrorMessage('Selection width and height must be valid numbers or simple math expressions')
+      return
+    }
+
+    const nextSelection = clampSelectionToDocument(
+      {
+        ...documentState.selection,
+        width,
+        height,
+      },
+      documentState
+    )
+
+    pendingDraftSyncRef.current.selection = selectionDraft
+    pushHistory('Set selection size', documentState, {
+      ...documentState,
+      selection: nextSelection,
+    })
+  }
+
+  async function copySelectionToClipboard() {
+    if (!documentState?.selection || !mainCanvasRef.current) return
+    if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) {
+      setErrorMessage('Image clipboard copy is not available in this environment')
+      return
+    }
+
+    try {
+      const selection = documentState.selection
+      const clipboardCanvas = document.createElement('canvas')
+      clipboardCanvas.width = selection.width
+      clipboardCanvas.height = selection.height
+      const context = clipboardCanvas.getContext('2d')
+      if (!context) {
+        throw new Error('Could not create clipboard canvas')
+      }
+
+      context.drawImage(
+        mainCanvasRef.current,
+        selection.x,
+        selection.y,
+        selection.width,
+        selection.height,
+        0,
+        0,
+        selection.width,
+        selection.height
+      )
+
+      const blob = await new Promise<Blob | null>(resolve => clipboardCanvas.toBlob(resolve, 'image/png'))
+      if (!blob) {
+        throw new Error('Could not create clipboard image')
+      }
+
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to copy selection to clipboard')
+    }
   }
 
   async function saveFinalImage() {
@@ -1345,44 +1956,86 @@ export function EditorApp() {
     !!activeLayer &&
     !!layerPositionDraft &&
     layerPositionDraft.layerId === activeLayer.id &&
-    snapToStep(Number(layerPositionDraft.x), normalizedMovementStep) === Math.round(activeLayer.x) &&
-    snapToStep(Number(layerPositionDraft.y), normalizedMovementStep) === Math.round(activeLayer.y)
+    snapToStep(parseRoundedMathExpression(layerPositionDraft.x, activeLayerExpressionVariables) ?? Number.NaN, normalizedMovementStep) === Math.round(activeLayer.x) &&
+    snapToStep(parseRoundedMathExpression(layerPositionDraft.y, activeLayerExpressionVariables) ?? Number.NaN, normalizedMovementStep) === Math.round(activeLayer.y)
 
   const isInspectorSizeUnchanged =
     !!activeLayer &&
     !!layerSizeDraft &&
     layerSizeDraft.layerId === activeLayer.id &&
-    Number(layerSizeDraft.width) === Math.round(activeLayer.width) &&
-    Number(layerSizeDraft.height) === Math.round(activeLayer.height)
+    parseRoundedMathExpression(layerSizeDraft.width, activeLayerExpressionVariables) === Math.round(activeLayer.width) &&
+    parseRoundedMathExpression(layerSizeDraft.height, activeLayerExpressionVariables) === Math.round(activeLayer.height)
+
+  const isSelectionPositionUnchanged =
+    !!documentState?.selection &&
+    !!selectionDraft &&
+    parseRoundedMathExpression(selectionDraft.x, selectionExpressionVariables) === Math.round(documentState.selection.x) &&
+    parseRoundedMathExpression(selectionDraft.y, selectionExpressionVariables) === Math.round(documentState.selection.y)
+
+  const isSelectionSizeUnchanged =
+    !!documentState?.selection &&
+    !!selectionDraft &&
+    parseRoundedMathExpression(selectionDraft.width, selectionExpressionVariables) === Math.round(documentState.selection.width) &&
+    parseRoundedMathExpression(selectionDraft.height, selectionExpressionVariables) === Math.round(documentState.selection.height)
 
   function applyCanvasDraft() {
-    const width = Math.max(1, Math.round(Number(canvasDraft.width)))
-    const height = Math.max(1, Math.round(Number(canvasDraft.height)))
+    const width = Math.max(1, parseRoundedMathExpression(canvasDraft.width, resolvedExpressionVariables) ?? Number.NaN)
+    const height = Math.max(1, parseRoundedMathExpression(canvasDraft.height, resolvedExpressionVariables) ?? Number.NaN)
     if (!Number.isFinite(width) || !Number.isFinite(height)) {
-      setErrorMessage('Canvas size must be valid numbers')
+      setErrorMessage('Canvas size must be valid numbers or simple math expressions')
       return
     }
     setCanvasSize(width, height)
   }
 
-  const contextLayerId = layerMenu.item
-  const menuItems = contextLayerId
-    ? [
-        {
-          view: 'Delete Image',
-          onClick: () => deleteLayer(contextLayerId),
-        },
-        { isSeparator: true as const },
-        {
-          view: 'Set Position...',
-          onClick: () => openPositionDialog(contextLayerId),
-        },
-        {
-          view: 'Set Size...',
-          onClick: () => openSizeDialog(contextLayerId),
-        },
-      ]
-    : []
+  const layerMenu = useContextMenu<CanvasContextMenuItem>()
+  const selectionContextLayerId = layerMenu.item?.type === 'selection' ? layerMenu.item.layerId : null
+  const contextLayerId = layerMenu.item?.type === 'layer' ? layerMenu.item.layerId : selectionContextLayerId
+  const menuItems =
+    layerMenu.item?.type === 'selection'
+      ? [
+          {
+            view: 'Copy Selection',
+            onClick: () => void copySelectionToClipboard(),
+          },
+          contextLayerId ? { isSeparator: true as const } : null,
+          contextLayerId
+            ? {
+            view: 'Delete Image',
+            onClick: () => deleteLayer(contextLayerId),
+              }
+            : null,
+          contextLayerId ? { isSeparator: true as const } : null,
+          contextLayerId
+            ? {
+            view: 'Set Position...',
+            onClick: () => openPositionDialog(contextLayerId),
+              }
+            : null,
+          contextLayerId
+            ? {
+            view: 'Set Size...',
+            onClick: () => openSizeDialog(contextLayerId),
+              }
+            : null,
+        ]
+      : layerMenu.item?.type === 'layer' && contextLayerId
+        ? [
+            {
+              view: 'Delete Image',
+              onClick: () => deleteLayer(contextLayerId),
+            },
+            { isSeparator: true as const },
+            {
+              view: 'Set Position...',
+              onClick: () => openPositionDialog(contextLayerId),
+            },
+            {
+              view: 'Set Size...',
+              onClick: () => openSizeDialog(contextLayerId),
+            },
+          ]
+        : []
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-base-100 text-base-content">
@@ -1398,7 +2051,7 @@ export function EditorApp() {
           <button
             className={cn('btn btn-square btn-sm', tool === 'marquee' ? 'btn-info' : 'btn-ghost')}
             onClick={() => setTool('marquee')}
-            title="Create a rectangular pixel selection"
+            title="Create a rectangular canvas selection"
           >
             <ScanLineIcon className="size-4" />
           </button>
@@ -1537,13 +2190,19 @@ export function EditorApp() {
                 <div
                   className="relative rounded-2xl border border-white/10 bg-[#11141b] shadow-[0_30px_80px_rgba(0,0,0,0.45)]"
                   onContextMenu={event => {
-                    if (!documentState || !activeLayer) return
+                    if (!documentState) return
                     const canvas = overlayCanvasRef.current
                     if (!canvas) return
                     const pointer = getPointerOnCanvas(event as unknown as React.PointerEvent<HTMLCanvasElement>, canvas)
                     const hit = hitLayer(documentState.layers, pointer)
-                    if (!hit) return
-                    layerMenu.onRightClick(event, hit.id)
+                    const isSelectionHit = !!documentState.selection && pointInRect(pointer, documentState.selection)
+                    if (isSelectionHit) {
+                      layerMenu.onRightClick(event, { type: 'selection', layerId: hit?.id ?? null })
+                      return
+                    }
+                    if (hit) {
+                      layerMenu.onRightClick(event, { type: 'layer', layerId: hit.id })
+                    }
                   }}
                 >
                   <canvas
@@ -1667,12 +2326,13 @@ export function EditorApp() {
                           </label>
                           <div className="flex items-end">
                             <button
-                              type="submit"
-                              className="btn btn-xs btn-info w-full"
-                              disabled={
-                                Number(canvasDraft.width) === documentState.width && Number(canvasDraft.height) === documentState.height
-                              }
-                            >
+                               type="submit"
+                               className="btn btn-xs btn-info w-full"
+                               disabled={
+                                 parseRoundedMathExpression(canvasDraft.width, resolvedExpressionVariables) === documentState.width &&
+                                 parseRoundedMathExpression(canvasDraft.height, resolvedExpressionVariables) === documentState.height
+                               }
+                             >
                               Apply
                             </button>
                           </div>
@@ -1708,13 +2368,19 @@ export function EditorApp() {
                           </label>
                           <div className="flex items-end">
                             <button
-                              type="submit"
-                              className="btn btn-xs btn-info w-full"
-                              disabled={
-                                (pasteSizeDraft.width.trim().length ? Number(pasteSizeDraft.width) : null) === documentState.pasteWidth &&
-                                (pasteSizeDraft.height.trim().length ? Number(pasteSizeDraft.height) : null) === documentState.pasteHeight
-                              }
-                            >
+                               type="submit"
+                               className="btn btn-xs btn-info w-full"
+                               disabled={
+                                 (pasteSizeDraft.width.trim().length
+                                   ? Math.max(1, parseRoundedMathExpression(pasteSizeDraft.width, resolvedExpressionVariables) ?? Number.NaN)
+                                   : null) ===
+                                   documentState.pasteWidth &&
+                                 (pasteSizeDraft.height.trim().length
+                                   ? Math.max(1, parseRoundedMathExpression(pasteSizeDraft.height, resolvedExpressionVariables) ?? Number.NaN)
+                                   : null) ===
+                                   documentState.pasteHeight
+                               }
+                             >
                               Apply
                             </button>
                           </div>
@@ -1751,23 +2417,177 @@ export function EditorApp() {
                       <div className="text-xs text-base-content/55">
                         Image placement snaps to multiples of {normalizedMovementStep} px.
                       </div>
-                   </div>
+                      <div className="text-xs text-base-content/55">
+                        Numeric inputs support `+`, `-`, `*`, `/`, `%` and variables like `canvasWidth` and `canvasHeight`.
+                      </div>
+                    </div>
                 ) : (
                   <p className="text-sm text-base-content/60">Pick a preset or enter a custom canvas size to begin.</p>
                 )}
               </section>
 
               <section>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">Variables</div>
+                <div className="space-y-3 rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
+                  <div className="text-xs text-base-content/55">
+                    Define project variables once, then reuse them in any numeric input. Variables can reference `canvasWidth`, `canvasHeight`, and other custom variables.
+                  </div>
+                  <div className="grid grid-cols-[1fr_1fr] gap-2 text-[11px] text-base-content/50">
+                    <div>`canvasWidth`: {formatPixels(documentState?.width ?? 0)}</div>
+                    <div>`canvasHeight`: {formatPixels(documentState?.height ?? 0)}</div>
+                  </div>
+                  <div className="space-y-2">
+                    {customVariables.map(variable => {
+                      const trimmedName = variable.name.trim()
+                      const resolvedValue = trimmedName ? resolvedExpressionVariables[trimmedName] : undefined
+                      const error = resolvedCustomVariables.errors[variable.id]
+
+                      return (
+                        <div key={variable.id} className="space-y-2 rounded-xl border border-base-content/10 bg-base-100/40 p-3">
+                          <div className="grid grid-cols-[1fr_auto] gap-2">
+                            <label className="form-control gap-1">
+                              <span className="label text-[11px]">Name</span>
+                              <input
+                                className="input input-xs"
+                                value={variable.name}
+                                placeholder="tileSize"
+                                onChange={event => updateCustomVariable(variable.id, { name: event.target.value })}
+                              />
+                            </label>
+                            <div className="flex items-end gap-2">
+                              <button
+                                type="button"
+                                className="btn btn-xs btn-ghost btn-square"
+                                title="Remove variable"
+                                onClick={() => removeCustomVariable(variable.id)}
+                              >
+                                <Trash2Icon className="size-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-xs btn-info"
+                                onClick={applyCustomVariables}
+                                disabled={Object.keys(resolvedCustomVariables.errors).length > 0}
+                              >
+                                Apply
+                              </button>
+                            </div>
+                          </div>
+                          <label className="form-control gap-1">
+                            <span className="label text-[11px]">Expression</span>
+                            <input
+                              className="input input-xs"
+                              value={variable.expression}
+                              placeholder="canvasWidth / 4"
+                              onChange={event => updateCustomVariable(variable.id, { expression: event.target.value })}
+                            />
+                          </label>
+                          <div className={cn('text-xs', error ? 'text-error' : 'text-base-content/55')}>
+                            {error
+                              ? error
+                              : trimmedName && resolvedValue !== undefined
+                                ? `Value: ${Math.round(resolvedValue)}`
+                                : 'Enter a variable name and expression'}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <Button className="btn-sm btn-soft w-full" onClick={addCustomVariable}>
+                    Add Variable
+                  </Button>
+                </div>
+              </section>
+
+              <section>
                 <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">Selection</div>
                 <div className="rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
-                  {documentState?.selection && activeLayer ? (
-                    <div className="space-y-1">
-                      <div>Layer: {activeLayer.name}</div>
-                      <div>Origin: {formatPixels(documentState.selection.x)}, {formatPixels(documentState.selection.y)}</div>
-                      <div>Size: {formatPixels(documentState.selection.width)} x {formatPixels(documentState.selection.height)}</div>
+                  {documentState?.selection && selectionDraft ? (
+                    <div className="space-y-3">
+                      <div className="text-xs text-base-content/55">
+                        Use math and variables like `selectionX`, `selectionY`, `selectionWidth`, `selectionHeight`, `canvasWidth`, and `canvasHeight`.
+                      </div>
+                      <div className="space-y-1">
+                        <div>Origin: {formatPixels(documentState.selection.x)}, {formatPixels(documentState.selection.y)}</div>
+                        <div>Size: {formatPixels(documentState.selection.width)} x {formatPixels(documentState.selection.height)}</div>
+                      </div>
+
+                      <form
+                        className="space-y-2"
+                        onSubmit={event => {
+                          event.preventDefault()
+                          applySelectionPosition()
+                        }}
+                      >
+                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Placement</div>
+                        <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                          <label className="form-control gap-1">
+                            <span className="label text-[11px]">X</span>
+                            <input
+                              className="input input-xs"
+                              value={selectionDraft.x}
+                              onChange={event =>
+                                setSelectionDraft(current => (current ? { ...current, x: event.target.value } : current))
+                              }
+                            />
+                          </label>
+                          <label className="form-control gap-1">
+                            <span className="label text-[11px]">Y</span>
+                            <input
+                              className="input input-xs"
+                              value={selectionDraft.y}
+                              onChange={event =>
+                                setSelectionDraft(current => (current ? { ...current, y: event.target.value } : current))
+                              }
+                            />
+                          </label>
+                          <div className="flex items-end">
+                            <button type="submit" className="btn btn-xs btn-info w-full" disabled={isSelectionPositionUnchanged}>
+                              Apply
+                            </button>
+                          </div>
+                        </div>
+                      </form>
+
+                      <form
+                        className="space-y-2"
+                        onSubmit={event => {
+                          event.preventDefault()
+                          applySelectionSize()
+                        }}
+                      >
+                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Exact size</div>
+                        <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                          <label className="form-control gap-1">
+                            <span className="label text-[11px]">W</span>
+                            <input
+                              className="input input-xs"
+                              value={selectionDraft.width}
+                              onChange={event =>
+                                setSelectionDraft(current => (current ? { ...current, width: event.target.value } : current))
+                              }
+                            />
+                          </label>
+                          <label className="form-control gap-1">
+                            <span className="label text-[11px]">H</span>
+                            <input
+                              className="input input-xs"
+                              value={selectionDraft.height}
+                              onChange={event =>
+                                setSelectionDraft(current => (current ? { ...current, height: event.target.value } : current))
+                              }
+                            />
+                          </label>
+                          <div className="flex items-end">
+                            <button type="submit" className="btn btn-xs btn-info w-full" disabled={isSelectionSizeUnchanged}>
+                              Apply
+                            </button>
+                          </div>
+                        </div>
+                      </form>
                     </div>
                   ) : (
-                    <div>Use the marquee tool to select an area on the active image, then drag inside it to move the pixels.</div>
+                    <div>Use the marquee tool to select any canvas region, then drag inside it to move the flattened image selection.</div>
                   )}
                 </div>
               </section>
@@ -1777,6 +2597,9 @@ export function EditorApp() {
                 <div className="rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
                   {activeLayer ? (
                     <div className="space-y-3">
+                      <div className="text-xs text-base-content/55">
+                        Use math and variables like `imageX`, `imageY`, `imageWidth`, `imageHeight`, `canvasWidth`, and `canvasHeight`.
+                      </div>
                       <div className="font-medium text-base-content">{activeLayer.name}</div>
                       <div>Position: {formatPixels(activeLayer.x)}, {formatPixels(activeLayer.y)}</div>
                       <div>Display size: {formatPixels(activeLayer.width)} x {formatPixels(activeLayer.height)}</div>
@@ -1948,6 +2771,7 @@ export function EditorApp() {
               applyExactSize()
             }}
           >
+            <p className="text-sm text-base-content/70">Use math and variables like `imageWidth`, `imageHeight`, `canvasWidth`, and `canvasHeight`.</p>
             <label className="form-control gap-2">
               <span className="label">Width</span>
               <input
@@ -1962,8 +2786,14 @@ export function EditorApp() {
                     if (!current.keepAspectRatio) {
                       return { ...current, width: nextWidth }
                     }
-                    const width = Number(nextWidth)
-                    if (!Number.isFinite(width)) {
+                    const width = parseRoundedMathExpression(nextWidth, {
+                      ...resolvedExpressionVariables,
+                      imageX: layer.x,
+                      imageY: layer.y,
+                      imageWidth: layer.width,
+                      imageHeight: layer.height,
+                    })
+                    if (width === null || !Number.isFinite(width)) {
                       return { ...current, width: nextWidth }
                     }
                     return {
@@ -1989,8 +2819,14 @@ export function EditorApp() {
                     if (!current.keepAspectRatio) {
                       return { ...current, height: nextHeight }
                     }
-                    const height = Number(nextHeight)
-                    if (!Number.isFinite(height)) {
+                    const height = parseRoundedMathExpression(nextHeight, {
+                      ...resolvedExpressionVariables,
+                      imageX: layer.x,
+                      imageY: layer.y,
+                      imageWidth: layer.width,
+                      imageHeight: layer.height,
+                    })
+                    if (height === null || !Number.isFinite(height)) {
                       return { ...current, height: nextHeight }
                     }
                     return {
@@ -2034,7 +2870,7 @@ export function EditorApp() {
               applyExactPosition()
             }}
           >
-            <p className="text-sm text-base-content/70">Coordinates use the top-left corner of the selected image on the document canvas.</p>
+            <p className="text-sm text-base-content/70">Coordinates use the top-left corner of the selected image on the document canvas. Use math and variables like `imageX`, `imageY`, `canvasWidth`, and `canvasHeight`.</p>
             <label className="form-control gap-2">
               <span className="label">X</span>
               <input

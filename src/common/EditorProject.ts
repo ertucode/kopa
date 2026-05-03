@@ -15,7 +15,6 @@ export const editorProjectLayerSchema = z.object({
 })
 
 export const editorProjectSelectionSchema = z.object({
-  layerId: z.string(),
   x: z.number(),
   y: z.number(),
   width: z.number(),
@@ -103,6 +102,45 @@ export const editorProjectUiStateSchema = z.object({
     height: z.string(),
   }),
   movementStep: z.string(),
+  movementStepDraft: z.string().default('1'),
+  pasteSizeDraft: z
+    .object({
+      width: z.string(),
+      height: z.string(),
+    })
+    .default({ width: '', height: '' }),
+  layerPositionDraft: z
+    .object({
+      layerId: z.string(),
+      x: z.string(),
+      y: z.string(),
+    })
+    .nullable()
+    .default(null),
+  layerSizeDraft: z
+    .object({
+      layerId: z.string(),
+      width: z.string(),
+      height: z.string(),
+    })
+    .nullable()
+    .default(null),
+  selectionDraft: z
+    .object({
+      x: z.string(),
+      y: z.string(),
+      width: z.string(),
+      height: z.string(),
+    })
+    .nullable()
+    .default(null),
+  variables: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      expression: z.string(),
+    })
+  ).default([]),
 })
 
 export const editorProjectFileSchema = z.object({

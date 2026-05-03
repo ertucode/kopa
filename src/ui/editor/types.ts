@@ -15,7 +15,6 @@ export type ImageLayer = {
 }
 
 export type PixelSelection = {
-  layerId: string
   x: number
   y: number
   width: number

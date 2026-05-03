@@ -55,22 +55,69 @@ function canvasToDataUrl(canvas: HTMLCanvasElement): string {
   return canvas.toDataURL('image/png')
 }
 
-export async function cutSelectionFromLayer(layer: ImageLayer, selection: PixelSelection): Promise<{
-  cutLayerDataUrl: string
+async function renderDocumentToCanvas(documentState: EditorDocument): Promise<HTMLCanvasElement> {
+  const canvas = document.createElement('canvas')
+  canvas.width = documentState.width
+  canvas.height = documentState.height
+  const context = canvas.getContext('2d')
+  if (!context) {
+    throw new Error('Could not create document canvas')
+  }
+
+  for (const layer of documentState.layers) {
+    if (!layer.visible) continue
+    const image = await loadImageElement(layer.dataUrl)
+    context.save()
+    context.globalAlpha = layer.opacity
+    context.imageSmoothingEnabled = true
+    context.drawImage(image, layer.x, layer.y, layer.width, layer.height)
+    context.restore()
+  }
+
+  return canvas
+}
+
+function getSelectionIntersection(selection: PixelSelection, layer: ImageLayer): {
+  sourceX: number
+  sourceY: number
+  sourceWidth: number
+  sourceHeight: number
+} | null {
+  const left = Math.max(selection.x, layer.x)
+  const top = Math.max(selection.y, layer.y)
+  const right = Math.min(selection.x + selection.width, layer.x + layer.width)
+  const bottom = Math.min(selection.y + selection.height, layer.y + layer.height)
+
+  if (right <= left || bottom <= top) return null
+
+  const sourceX = Math.max(0, Math.round(((left - layer.x) / layer.width) * layer.pixelWidth))
+  const sourceY = Math.max(0, Math.round(((top - layer.y) / layer.height) * layer.pixelHeight))
+  const sourceRight = Math.min(layer.pixelWidth, Math.round(((right - layer.x) / layer.width) * layer.pixelWidth))
+  const sourceBottom = Math.min(layer.pixelHeight, Math.round(((bottom - layer.y) / layer.height) * layer.pixelHeight))
+
+  return {
+    sourceX,
+    sourceY,
+    sourceWidth: Math.max(1, sourceRight - sourceX),
+    sourceHeight: Math.max(1, sourceBottom - sourceY),
+  }
+}
+
+export async function cutSelectionFromDocument(documentState: EditorDocument, selection: PixelSelection): Promise<{
+  layers: ImageLayer[]
   floatingDataUrl: string
 }> {
-  const baseCanvas = await renderLayerToCanvas(layer)
+  const documentCanvas = await renderDocumentToCanvas(documentState)
   const floatingCanvas = document.createElement('canvas')
   floatingCanvas.width = selection.width
   floatingCanvas.height = selection.height
   const floatingContext = floatingCanvas.getContext('2d')
-  const baseContext = baseCanvas.getContext('2d')
-  if (!floatingContext || !baseContext) {
+  if (!floatingContext) {
     throw new Error('Could not create selection canvas')
   }
 
   floatingContext.drawImage(
-    baseCanvas,
+    documentCanvas,
     selection.x,
     selection.y,
     selection.width,
@@ -81,47 +128,34 @@ export async function cutSelectionFromLayer(layer: ImageLayer, selection: PixelS
     selection.height
   )
 
-  baseContext.clearRect(selection.x, selection.y, selection.width, selection.height)
+  const layers = await Promise.all(
+    documentState.layers.map(async layer => {
+      if (!layer.visible) return layer
+      const intersection = getSelectionIntersection(selection, layer)
+      if (!intersection) return layer
+
+      const layerCanvas = await renderLayerToCanvas(layer)
+      const layerContext = layerCanvas.getContext('2d')
+      if (!layerContext) {
+        throw new Error('Could not create layer selection canvas')
+      }
+
+      layerContext.clearRect(
+        intersection.sourceX,
+        intersection.sourceY,
+        intersection.sourceWidth,
+        intersection.sourceHeight
+      )
+
+      return {
+        ...layer,
+        dataUrl: canvasToDataUrl(layerCanvas),
+      }
+    })
+  )
 
   return {
-    cutLayerDataUrl: canvasToDataUrl(baseCanvas),
+    layers,
     floatingDataUrl: canvasToDataUrl(floatingCanvas),
   }
-}
-
-export async function applyFloatingSelectionToLayer(args: {
-  layer: ImageLayer
-  cutLayerDataUrl: string
-  floatingDataUrl: string
-  destinationX: number
-  destinationY: number
-  width: number
-  height: number
-}): Promise<string> {
-  const [baseImage, floatingImage] = await Promise.all([
-    loadImageElement(args.cutLayerDataUrl),
-    loadImageElement(args.floatingDataUrl),
-  ])
-
-  const canvas = document.createElement('canvas')
-  canvas.width = args.layer.pixelWidth
-  canvas.height = args.layer.pixelHeight
-  const context = canvas.getContext('2d')
-  if (!context) {
-    throw new Error('Could not create commit canvas')
-  }
-
-  context.drawImage(baseImage, 0, 0, args.layer.pixelWidth, args.layer.pixelHeight)
-  context.drawImage(
-    floatingImage,
-    0,
-    0,
-    args.width,
-    args.height,
-    args.destinationX,
-    args.destinationY,
-    args.width,
-    args.height
-  )
-  return canvasToDataUrl(canvas)
 }

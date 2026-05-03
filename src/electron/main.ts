@@ -1,7 +1,8 @@
-import { app, BrowserWindow, Menu, screen, shell, clipboard, dialog } from 'electron'
+import { app, BrowserWindow, Menu, screen, shell, clipboard, dialog, globalShortcut } from 'electron'
 import path from 'path'
-import os from 'os'
+import os, { homedir } from 'os'
 import fs from 'fs/promises'
+import fsSync from 'fs'
 import { ipcHandle, isDev } from './util.js'
 import { getPreloadPath, getUIPath } from './pathResolver.js'
 import { xlsxWorkerPool } from './utils/xlsx-worker-pool.js'
@@ -78,6 +79,19 @@ async function createWindow(args?: WindowArgsWithoutStatic) {
 }
 
 app.on('ready', () => {
+  if (isDev()) {
+    fsSync.watchFile(homedir() + '/focus-electron', { interval: 50 }, (curr, prev) => {
+      if (curr.mtime !== prev.mtime) {
+        console.log('Focusing Electron')
+        const windows = BrowserWindow.getAllWindows()
+        if (windows[0]) {
+          windows[0].show()
+          windows[0].focus()
+        }
+      }
+    })
+  }
+
   const menuTemplate: Electron.MenuItemConstructorOptions[] = [
     {
       label: 'File',
@@ -238,9 +252,9 @@ app.on('ready', () => {
           filters: [{ name: 'PNG Image', extensions: ['png'] }],
         })
       : dialog.showSaveDialog({
-        defaultPath: request.defaultFileName,
-        filters: [{ name: 'PNG Image', extensions: ['png'] }],
-      }))
+          defaultPath: request.defaultFileName,
+          filters: [{ name: 'PNG Image', extensions: ['png'] }],
+        }))
 
     if (response.canceled || !response.filePath) {
       return { canceled: true }
