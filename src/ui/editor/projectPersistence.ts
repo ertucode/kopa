@@ -8,7 +8,7 @@ import {
   EditorProjectSaveRequest,
   EditorProjectUiState,
 } from '@common/EditorProject'
-import { EditorDocument, HistoryEntry } from './types'
+import { EditorDocument, EditorLayer, HistoryEntry } from './types'
 
 type RuntimeHistoryState = {
   past: HistoryEntry[]
@@ -32,10 +32,25 @@ type AssetDescriptor = {
   dataBase64: string
 }
 
+function cloneLayer<T extends EditorLayer>(layer: T): T {
+  if (layer.type === 'highlight') {
+    return {
+      ...layer,
+      points: layer.points.map(point => ({ ...point })),
+    }
+  }
+
+  if (layer.type === 'shape') {
+    return { ...layer }
+  }
+
+  return { ...layer }
+}
+
 function cloneDocument(documentState: EditorDocument): EditorDocument {
   return {
     ...documentState,
-    layers: documentState.layers.map(layer => ({ ...layer })),
+    layers: documentState.layers.map(layer => cloneLayer(layer)),
     selection: documentState.selection ? { ...documentState.selection } : null,
   }
 }
@@ -103,6 +118,7 @@ async function buildAssetMap(states: EditorDocument[]) {
 
   for (const state of states) {
     for (const layer of state.layers) {
+      if (layer.type !== 'image') continue
       if (dataUrlToAssetId.has(layer.dataUrl)) continue
       const assetId = await hashString(layer.dataUrl)
       const { mimeType, dataBase64 } = parseDataUrl(layer.dataUrl)
@@ -123,6 +139,42 @@ function serializeDocument(documentState: EditorDocument, dataUrlToAssetId: Map<
     activeLayerId: documentState.activeLayerId,
     selection: documentState.selection ? { ...documentState.selection } : null,
     layers: documentState.layers.map(layer => {
+      if (layer.type === 'highlight') {
+        return {
+          id: layer.id,
+          type: 'highlight',
+          name: layer.name,
+          visible: layer.visible,
+          opacity: layer.opacity,
+          x: layer.x,
+          y: layer.y,
+          width: layer.width,
+          height: layer.height,
+          color: layer.color,
+          brushSize: layer.brushSize,
+          brushShape: layer.brushShape,
+          points: layer.points.map(point => ({ ...point })),
+        }
+      }
+
+      if (layer.type === 'shape') {
+        return {
+          id: layer.id,
+          type: 'shape',
+          name: layer.name,
+          visible: layer.visible,
+          opacity: layer.opacity,
+          x: layer.x,
+          y: layer.y,
+          width: layer.width,
+          height: layer.height,
+          shape: layer.shape,
+          fillColor: layer.fillColor,
+          borderColor: layer.borderColor,
+          borderRadius: layer.borderRadius,
+        }
+      }
+
       const assetId = dataUrlToAssetId.get(layer.dataUrl)
       if (!assetId) {
         throw new Error(`Missing project asset for layer ${layer.name}`)
@@ -130,6 +182,7 @@ function serializeDocument(documentState: EditorDocument, dataUrlToAssetId: Map<
 
       return {
         id: layer.id,
+        type: 'image',
         name: layer.name,
         visible: layer.visible,
         opacity: layer.opacity,
@@ -146,8 +199,9 @@ function serializeDocument(documentState: EditorDocument, dataUrlToAssetId: Map<
 }
 
 function diffLayers(previousLayer: EditorProjectLayer, nextLayer: EditorProjectLayer) {
-  const changes: Partial<EditorProjectLayer> = {}
+  const changes: Record<string, unknown> = {}
 
+  if (previousLayer.type !== nextLayer.type) changes.type = nextLayer.type
   if (previousLayer.name !== nextLayer.name) changes.name = nextLayer.name
   if (previousLayer.visible !== nextLayer.visible) changes.visible = nextLayer.visible
   if (previousLayer.opacity !== nextLayer.opacity) changes.opacity = nextLayer.opacity
@@ -155,11 +209,27 @@ function diffLayers(previousLayer: EditorProjectLayer, nextLayer: EditorProjectL
   if (previousLayer.y !== nextLayer.y) changes.y = nextLayer.y
   if (previousLayer.width !== nextLayer.width) changes.width = nextLayer.width
   if (previousLayer.height !== nextLayer.height) changes.height = nextLayer.height
-  if (previousLayer.pixelWidth !== nextLayer.pixelWidth) changes.pixelWidth = nextLayer.pixelWidth
-  if (previousLayer.pixelHeight !== nextLayer.pixelHeight) changes.pixelHeight = nextLayer.pixelHeight
-  if (previousLayer.assetId !== nextLayer.assetId) changes.assetId = nextLayer.assetId
+  if (previousLayer.type === 'image' && nextLayer.type === 'image') {
+    if (previousLayer.pixelWidth !== nextLayer.pixelWidth) changes.pixelWidth = nextLayer.pixelWidth
+    if (previousLayer.pixelHeight !== nextLayer.pixelHeight) changes.pixelHeight = nextLayer.pixelHeight
+    if (previousLayer.assetId !== nextLayer.assetId) changes.assetId = nextLayer.assetId
+  }
+  if (previousLayer.type === 'highlight' && nextLayer.type === 'highlight') {
+    if (previousLayer.color !== nextLayer.color) changes.color = nextLayer.color
+    if (previousLayer.brushSize !== nextLayer.brushSize) changes.brushSize = nextLayer.brushSize
+    if (previousLayer.brushShape !== nextLayer.brushShape) changes.brushShape = nextLayer.brushShape
+    if (JSON.stringify(previousLayer.points) !== JSON.stringify(nextLayer.points)) {
+      changes.points = nextLayer.points.map(point => ({ ...point }))
+    }
+  }
+  if (previousLayer.type === 'shape' && nextLayer.type === 'shape') {
+    if (previousLayer.shape !== nextLayer.shape) changes.shape = nextLayer.shape
+    if (previousLayer.fillColor !== nextLayer.fillColor) changes.fillColor = nextLayer.fillColor
+    if (previousLayer.borderColor !== nextLayer.borderColor) changes.borderColor = nextLayer.borderColor
+    if (previousLayer.borderRadius !== nextLayer.borderRadius) changes.borderRadius = nextLayer.borderRadius
+  }
 
-  return changes
+  return changes as Extract<EditorProjectChange, { type: 'update-layer' }>['changes']
 }
 
 function diffDocuments(previousDocument: PersistedEditorDocument, nextDocument: PersistedEditorDocument, label: string): EditorProjectOperation {
@@ -233,7 +303,14 @@ function diffDocuments(previousDocument: PersistedEditorDocument, nextDocument: 
 function applyOperation(documentState: PersistedEditorDocument, operation: EditorProjectOperation): PersistedEditorDocument {
   let nextDocument = {
     ...documentState,
-    layers: documentState.layers.map(layer => ({ ...layer })),
+    layers: documentState.layers.map(layer =>
+      layer.type === 'highlight'
+        ? {
+            ...layer,
+            points: layer.points.map(point => ({ ...point })),
+          }
+        : { ...layer }
+    ),
     selection: documentState.selection ? { ...documentState.selection } : null,
   }
 
@@ -261,7 +338,16 @@ function applyOperation(documentState: PersistedEditorDocument, operation: Edito
 
     if (change.type === 'insert-layer') {
       const layers = [...nextDocument.layers]
-      layers.splice(change.index, 0, { ...change.layer })
+      layers.splice(
+        change.index,
+        0,
+        change.layer.type === 'highlight'
+          ? {
+              ...change.layer,
+              points: change.layer.points.map(point => ({ ...point })),
+            }
+          : { ...change.layer }
+      )
       nextDocument = {
         ...nextDocument,
         layers,
@@ -281,14 +367,21 @@ function applyOperation(documentState: PersistedEditorDocument, operation: Edito
 
     nextDocument = {
       ...nextDocument,
-      layers: nextDocument.layers.map(layer =>
-        layer.id === change.layerId
-          ? {
-              ...layer,
-              ...change.changes,
-            }
-          : layer
-      ),
+      layers: nextDocument.layers.map<EditorProjectLayer>(layer => {
+        if (layer.id !== change.layerId) return layer
+        if (layer.type === 'highlight') {
+          return {
+            ...layer,
+            ...change.changes,
+            ...(change.changes.points ? { points: change.changes.points.map(point => ({ ...point })) } : {}),
+          } as EditorProjectLayer
+        }
+
+        return {
+          ...layer,
+          ...change.changes,
+        } as EditorProjectLayer
+      }),
     }
   }
 
@@ -304,6 +397,42 @@ function deserializeDocument(documentState: PersistedEditorDocument, assetDataUr
     activeLayerId: documentState.activeLayerId,
     selection: documentState.selection ? { ...documentState.selection } : null,
     layers: documentState.layers.map(layer => {
+      if (layer.type === 'highlight') {
+        return {
+          id: layer.id,
+          type: 'highlight',
+          name: layer.name,
+          visible: layer.visible,
+          opacity: layer.opacity,
+          x: layer.x,
+          y: layer.y,
+          width: layer.width,
+          height: layer.height,
+          color: layer.color,
+          brushSize: layer.brushSize,
+          brushShape: layer.brushShape,
+          points: layer.points.map(point => ({ ...point })),
+        }
+      }
+
+      if (layer.type === 'shape') {
+        return {
+          id: layer.id,
+          type: 'shape',
+          name: layer.name,
+          visible: layer.visible,
+          opacity: layer.opacity,
+          x: layer.x,
+          y: layer.y,
+          width: layer.width,
+          height: layer.height,
+          shape: layer.shape,
+          fillColor: layer.fillColor,
+          borderColor: layer.borderColor,
+          borderRadius: layer.borderRadius,
+        }
+      }
+
       const dataUrl = assetDataUrls.get(layer.assetId)
       if (!dataUrl) {
         throw new Error(`Missing project image asset ${layer.assetId}`)
@@ -311,6 +440,7 @@ function deserializeDocument(documentState: PersistedEditorDocument, assetDataUr
 
       return {
         id: layer.id,
+        type: 'image',
         name: layer.name,
         visible: layer.visible,
         opacity: layer.opacity,

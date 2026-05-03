@@ -22,7 +22,20 @@ import { getWindowElectron, windowArgs } from '@/getWindowElectron'
 import { RecentEditorProject } from '@common/EditorProject'
 import { createLayerFromFile, cutSelectionFromDocument, loadImageElement } from './raster'
 import { deserializeProject, serializeProject } from './projectPersistence'
-import { EditorDocument, EditorTool, HistoryEntry, ImageLayer, NewDocumentPreset, PixelSelection, ResizeHandle } from './types'
+import {
+  EditorDocument,
+  EditorLayer,
+  EditorTool,
+  HighlightBrushShape,
+  HighlightLayer,
+  HistoryEntry,
+  ImageLayer,
+  NewDocumentPreset,
+  PixelSelection,
+  ResizeHandle,
+  ShapeLayer,
+  ShapeType,
+} from './types'
 
 const DOCUMENT_PRESETS: NewDocumentPreset[] = [
   { label: 'Avatar', width: 512, height: 512 },
@@ -51,6 +64,17 @@ type InteractionState =
   | {
       type: 'creating-selection'
       initialDocument: EditorDocument
+      start: Point
+    }
+  | {
+      type: 'creating-highlight'
+      initialDocument: EditorDocument
+      layerId: string
+    }
+  | {
+      type: 'creating-shape'
+      initialDocument: EditorDocument
+      layerId: string
       start: Point
     }
   | {
@@ -122,6 +146,21 @@ type ProjectNameDraftState = {
   value: string
 }
 
+type HighlightSettingsState = {
+  color: string
+  opacity: number
+  brushShape: HighlightBrushShape
+  brushSize: number
+}
+
+type ShapeSettingsState = {
+  shape: ShapeType
+  fillColor: string
+  borderColor: string
+  borderRadius: number
+  opacity: number
+}
+
 type ExpressionVariables = Record<string, number>
 
 type SelectionPreview = {
@@ -156,6 +195,8 @@ type EditorSessionState = {
   layerSizeDraft: LayerSizeDraftState | null
   selectionDraft: SelectionDraftState | null
   variables: CustomVariableDraft[]
+  highlightSettings: HighlightSettingsState
+  shapeSettings: ShapeSettingsState
 }
 
 const DEFAULT_EDITOR_SESSION: EditorSessionState = {
@@ -168,12 +209,36 @@ const DEFAULT_EDITOR_SESSION: EditorSessionState = {
   layerSizeDraft: null,
   selectionDraft: null,
   variables: [],
+  highlightSettings: {
+    color: '#facc15',
+    opacity: 0.35,
+    brushShape: 'circle',
+    brushSize: 32,
+  },
+  shapeSettings: {
+    shape: 'rectangle',
+    fillColor: '#60a5fa',
+    borderColor: '#dbeafe',
+    borderRadius: 16,
+    opacity: 0.8,
+  },
+}
+
+function cloneLayer<T extends EditorLayer>(layer: T): T {
+  if (layer.type === 'highlight') {
+    return {
+      ...layer,
+      points: layer.points.map(point => ({ ...point })),
+    }
+  }
+
+  return { ...layer }
 }
 
 function cloneDocument(documentState: EditorDocument): EditorDocument {
   return {
     ...documentState,
-    layers: documentState.layers.map(layer => ({ ...layer })),
+    layers: documentState.layers.map(layer => cloneLayer(layer)),
     selection: documentState.selection ? { ...documentState.selection } : null,
   }
 }
@@ -194,12 +259,12 @@ function createDocument(width: number, height: number): EditorDocument {
   }
 }
 
-function getActiveLayer(documentState: EditorDocument | null): ImageLayer | null {
+function getActiveLayer(documentState: EditorDocument | null): EditorLayer | null {
   if (!documentState?.activeLayerId) return null
   return documentState.layers.find(layer => layer.id === documentState.activeLayerId) ?? null
 }
 
-function updateLayer(documentState: EditorDocument, layerId: string, updater: (layer: ImageLayer) => ImageLayer): EditorDocument {
+function updateLayer(documentState: EditorDocument, layerId: string, updater: (layer: EditorLayer) => EditorLayer): EditorDocument {
   return {
     ...documentState,
     layers: documentState.layers.map(layer => (layer.id === layerId ? updater(layer) : layer)),
@@ -227,7 +292,7 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
 
-function getLayerRect(layer: ImageLayer): Rect {
+function getLayerRect(layer: EditorLayer): Rect {
   return { x: layer.x, y: layer.y, width: layer.width, height: layer.height }
 }
 
@@ -251,7 +316,7 @@ function getHandles(layer: ImageLayer): Array<{ handle: ResizeHandle; rect: Rect
   }))
 }
 
-function hitLayer(layers: ImageLayer[], point: Point): ImageLayer | null {
+function hitLayer(layers: EditorLayer[], point: Point): EditorLayer | null {
   for (let index = layers.length - 1; index >= 0; index -= 1) {
     const layer = layers[index]
     if (!layer.visible) continue
@@ -260,6 +325,255 @@ function hitLayer(layers: ImageLayer[], point: Point): ImageLayer | null {
     }
   }
   return null
+}
+
+function isImageLayer(layer: EditorLayer): layer is ImageLayer {
+  return layer.type === 'image'
+}
+
+function isHighlightLayer(layer: EditorLayer): layer is HighlightLayer {
+  return layer.type === 'highlight'
+}
+
+function isShapeLayer(layer: EditorLayer): layer is ShapeLayer {
+  return layer.type === 'shape'
+}
+
+function clampHighlightOpacity(value: number): number {
+  return clamp(Math.round(value * 100) / 100, 0.05, 1)
+}
+
+function clampHighlightBrushSize(value: number): number {
+  return clamp(Math.round(value), 4, 256)
+}
+
+function clampShapeOpacity(value: number): number {
+  return clamp(Math.round(value * 100) / 100, 0.05, 1)
+}
+
+function clampShapeBorderRadius(value: number, width: number, height: number): number {
+  return clamp(Math.round(value), 0, Math.floor(Math.min(width, height) / 2))
+}
+
+function normalizeCircleRect(start: Point, current: Point): Rect {
+  const deltaX = current.x - start.x
+  const deltaY = current.y - start.y
+  const size = Math.max(1, Math.max(Math.abs(deltaX), Math.abs(deltaY)))
+
+  return {
+    x: deltaX >= 0 ? start.x : start.x - size,
+    y: deltaY >= 0 ? start.y : start.y - size,
+    width: size,
+    height: size,
+  }
+}
+
+function normalizeHighlightPoints(points: Point[], brushSize: number): { x: number; y: number; width: number; height: number; points: Point[] } {
+  const radius = brushSize / 2
+  const minX = Math.min(...points.map(point => point.x)) - radius
+  const minY = Math.min(...points.map(point => point.y)) - radius
+  const maxX = Math.max(...points.map(point => point.x)) + radius
+  const maxY = Math.max(...points.map(point => point.y)) + radius
+
+  return {
+    x: Math.round(minX),
+    y: Math.round(minY),
+    width: Math.max(1, Math.round(maxX - minX)),
+    height: Math.max(1, Math.round(maxY - minY)),
+    points: points.map(point => ({
+      x: point.x - minX,
+      y: point.y - minY,
+    })),
+  }
+}
+
+function createHighlightLayer(points: Point[], settings: HighlightSettingsState): HighlightLayer {
+  const normalized = normalizeHighlightPoints(points, settings.brushSize)
+  return {
+    id: crypto.randomUUID(),
+    type: 'highlight',
+    name: 'Highlight',
+    visible: true,
+    opacity: settings.opacity,
+    x: normalized.x,
+    y: normalized.y,
+    width: normalized.width,
+    height: normalized.height,
+    color: settings.color,
+    brushSize: settings.brushSize,
+    brushShape: settings.brushShape,
+    points: normalized.points,
+  }
+}
+
+function createShapeLayer(rect: Rect, settings: ShapeSettingsState): ShapeLayer {
+  return {
+    id: crypto.randomUUID(),
+    type: 'shape',
+    name: settings.shape[0].toUpperCase() + settings.shape.slice(1),
+    visible: true,
+    opacity: settings.opacity,
+    x: Math.round(rect.x),
+    y: Math.round(rect.y),
+    width: Math.max(1, Math.round(rect.width)),
+    height: Math.max(1, Math.round(rect.height)),
+    shape: settings.shape,
+    fillColor: settings.fillColor,
+    borderColor: settings.borderColor,
+    borderRadius: clampShapeBorderRadius(settings.borderRadius, rect.width, rect.height),
+  }
+}
+
+function getShapeRectFromDrag(settings: ShapeSettingsState, start: Point, current: Point): Rect {
+  if (settings.shape === 'circle') {
+    return normalizeCircleRect(start, current)
+  }
+
+  return normalizeRect(start, current)
+}
+
+function updateShapeLayerRect(layer: ShapeLayer, rect: Rect): ShapeLayer {
+  const width = Math.max(1, Math.round(rect.width))
+  const height = Math.max(1, Math.round(rect.height))
+
+  return {
+    ...layer,
+    x: Math.round(rect.x),
+    y: Math.round(rect.y),
+    width,
+    height,
+    borderRadius: clampShapeBorderRadius(layer.borderRadius, width, height),
+  }
+}
+
+function updateShapeLayerStyle(
+  layer: ShapeLayer,
+  changes: Partial<Pick<ShapeLayer, 'shape' | 'fillColor' | 'borderColor' | 'borderRadius' | 'opacity' | 'width' | 'height'>>
+): ShapeLayer {
+  const nextShape = changes.shape ?? layer.shape
+  let width = Math.max(1, Math.round(changes.width ?? layer.width))
+  let height = Math.max(1, Math.round(changes.height ?? layer.height))
+
+  if (nextShape === 'circle') {
+    const size = Math.max(width, height)
+    width = size
+    height = size
+  }
+
+  return {
+    ...layer,
+    ...changes,
+    name: nextShape[0].toUpperCase() + nextShape.slice(1),
+    shape: nextShape,
+    width,
+    height,
+    borderRadius: clampShapeBorderRadius(changes.borderRadius ?? layer.borderRadius, width, height),
+  }
+}
+
+function buildRoundedRectPath(context: CanvasRenderingContext2D, rect: Rect, radius: number) {
+  context.beginPath()
+  context.roundRect(rect.x, rect.y, rect.width, rect.height, radius)
+}
+
+function drawShapeLayer(context: CanvasRenderingContext2D, layer: ShapeLayer) {
+  const rect = { x: layer.x, y: layer.y, width: layer.width, height: layer.height }
+
+  context.save()
+  context.globalAlpha = layer.opacity
+  context.fillStyle = layer.fillColor
+  context.strokeStyle = layer.borderColor
+  context.lineWidth = 2
+
+  if (layer.shape === 'rectangle') {
+    buildRoundedRectPath(context, rect, clampShapeBorderRadius(layer.borderRadius, layer.width, layer.height))
+  } else {
+    context.beginPath()
+    context.ellipse(
+      layer.x + layer.width / 2,
+      layer.y + layer.height / 2,
+      layer.width / 2,
+      layer.height / 2,
+      0,
+      0,
+      Math.PI * 2
+    )
+  }
+
+  context.fill()
+  context.stroke()
+  context.restore()
+}
+
+function getHighlightAbsolutePoints(layer: HighlightLayer): Point[] {
+  return layer.points.map(point => ({
+    x: layer.x + point.x,
+    y: layer.y + point.y,
+  }))
+}
+
+function updateHighlightLayerPoints(layer: HighlightLayer, points: Point[]): HighlightLayer {
+  const normalized = normalizeHighlightPoints(points, layer.brushSize)
+  return {
+    ...layer,
+    x: normalized.x,
+    y: normalized.y,
+    width: normalized.width,
+    height: normalized.height,
+    points: normalized.points,
+  }
+}
+
+function updateHighlightLayerStyle(
+  layer: HighlightLayer,
+  changes: Partial<Pick<HighlightLayer, 'color' | 'opacity' | 'brushShape' | 'brushSize'>>
+): HighlightLayer {
+  const absolutePoints = getHighlightAbsolutePoints(layer)
+  const nextLayer: HighlightLayer = {
+    ...layer,
+    ...changes,
+  }
+
+  if (changes.brushSize !== undefined) {
+    return updateHighlightLayerPoints(nextLayer, absolutePoints)
+  }
+
+  return nextLayer
+}
+
+function drawHighlightLayer(context: CanvasRenderingContext2D, layer: HighlightLayer) {
+  if (!layer.points.length) return
+
+  context.save()
+  context.globalAlpha = layer.opacity
+  context.fillStyle = layer.color
+  context.strokeStyle = layer.color
+  context.lineWidth = layer.brushSize
+  context.lineCap = layer.brushShape === 'circle' ? 'round' : 'square'
+  context.lineJoin = layer.brushShape === 'circle' ? 'round' : 'miter'
+
+  if (layer.points.length === 1) {
+    const point = layer.points[0]
+    if (layer.brushShape === 'circle') {
+      context.beginPath()
+      context.arc(layer.x + point.x, layer.y + point.y, layer.brushSize / 2, 0, Math.PI * 2)
+      context.fill()
+    } else {
+      const size = layer.brushSize
+      context.fillRect(layer.x + point.x - size / 2, layer.y + point.y - size / 2, size, size)
+    }
+    context.restore()
+    return
+  }
+
+  context.beginPath()
+  context.moveTo(layer.x + layer.points[0].x, layer.y + layer.points[0].y)
+  for (let index = 1; index < layer.points.length; index += 1) {
+    const point = layer.points[index]
+    context.lineTo(layer.x + point.x, layer.y + point.y)
+  }
+  context.stroke()
+  context.restore()
 }
 
 function getPointerOnCanvas(event: React.PointerEvent<HTMLCanvasElement>, canvas: HTMLCanvasElement): Point {
@@ -510,6 +824,8 @@ export function EditorApp() {
   const [movementStep, setMovementStep] = useState(DEFAULT_EDITOR_SESSION.movementStep)
   const [movementStepDraft, setMovementStepDraft] = useState(DEFAULT_EDITOR_SESSION.movementStep)
   const [customVariables, setCustomVariables] = useState<CustomVariableDraft[]>(DEFAULT_EDITOR_SESSION.variables)
+  const [highlightSettings, setHighlightSettings] = useState<HighlightSettingsState>(DEFAULT_EDITOR_SESSION.highlightSettings)
+  const [shapeSettings, setShapeSettings] = useState<ShapeSettingsState>(DEFAULT_EDITOR_SESSION.shapeSettings)
   const [layerPositionDraft, setLayerPositionDraft] = useState<LayerPositionDraftState | null>(null)
   const [layerSizeDraft, setLayerSizeDraft] = useState<LayerSizeDraftState | null>(null)
   const [selectionDraft, setSelectionDraft] = useState<SelectionDraftState | null>(null)
@@ -538,6 +854,8 @@ export function EditorApp() {
   const [imageRevision, setImageRevision] = useState(0)
 
   const activeLayer = useMemo(() => getActiveLayer(documentState), [documentState])
+  const activeHighlight = activeLayer && isHighlightLayer(activeLayer) ? activeLayer : null
+  const activeShape = activeLayer && isShapeLayer(activeLayer) ? activeLayer : null
   const canvasExpressionVariables = useMemo<ExpressionVariables>(
     () => ({
       canvasWidth: documentState?.width ?? 0,
@@ -585,6 +903,8 @@ export function EditorApp() {
     nextLayerSizeDraft: LayerSizeDraftState | null
     nextSelectionDraft: SelectionDraftState | null
     nextVariables: CustomVariableDraft[]
+    nextHighlightSettings: HighlightSettingsState
+    nextShapeSettings: ShapeSettingsState
   }) {
     isHydratingProjectRef.current = true
     setProjectPath(args.nextProjectPath)
@@ -597,6 +917,8 @@ export function EditorApp() {
     setMovementStep(args.nextMovementStep)
     setMovementStepDraft(args.nextMovementStepDraft)
     setCustomVariables(args.nextVariables)
+    setHighlightSettings(args.nextHighlightSettings)
+    setShapeSettings(args.nextShapeSettings)
     pendingDraftSyncRef.current = {
       layerPosition: args.nextLayerPositionDraft,
       layerSize: args.nextLayerSizeDraft,
@@ -649,6 +971,8 @@ export function EditorApp() {
         nextLayerSizeDraft: loadedProject.ui.layerSizeDraft,
         nextSelectionDraft: loadedProject.ui.selectionDraft,
         nextVariables: loadedProject.ui.variables,
+        nextHighlightSettings: loadedProject.ui.highlightSettings,
+        nextShapeSettings: loadedProject.ui.shapeSettings,
       })
       await refreshRecentProjects()
     } catch (error) {
@@ -674,6 +998,8 @@ export function EditorApp() {
           layerSizeDraft,
           selectionDraft,
           variables: customVariables,
+          highlightSettings,
+          shapeSettings,
         },
       })
 
@@ -711,6 +1037,8 @@ export function EditorApp() {
           layerSizeDraft,
           selectionDraft,
           variables: customVariables,
+          highlightSettings,
+          shapeSettings,
         },
       })
 
@@ -768,6 +1096,8 @@ export function EditorApp() {
         nextLayerSizeDraft: loadedProject.ui.layerSizeDraft,
         nextSelectionDraft: loadedProject.ui.selectionDraft,
         nextVariables: loadedProject.ui.variables,
+        nextHighlightSettings: loadedProject.ui.highlightSettings,
+        nextShapeSettings: loadedProject.ui.shapeSettings,
       })
       await refreshRecentProjects()
     } catch (error) {
@@ -796,6 +1126,8 @@ export function EditorApp() {
       nextLayerSizeDraft: DEFAULT_EDITOR_SESSION.layerSizeDraft,
       nextSelectionDraft: DEFAULT_EDITOR_SESSION.selectionDraft,
       nextVariables: DEFAULT_EDITOR_SESSION.variables,
+      nextHighlightSettings: DEFAULT_EDITOR_SESSION.highlightSettings,
+      nextShapeSettings: DEFAULT_EDITOR_SESSION.shapeSettings,
     })
     setHasUnsavedChanges(true)
   }
@@ -911,7 +1243,7 @@ export function EditorApp() {
 
       if (layerSizeDraft) {
         const layer = nextDocument.layers.find(item => item.id === layerSizeDraft.layerId)
-        if (layer) {
+        if (layer && !isHighlightLayer(layer)) {
           const layerVariables = {
             ...resolvedVariables,
             imageX: layer.x,
@@ -919,8 +1251,13 @@ export function EditorApp() {
             imageWidth: layer.width,
             imageHeight: layer.height,
           }
-          const nextWidth = Math.max(1, parseRoundedMathExpression(layerSizeDraft.width, layerVariables) ?? Number.NaN)
-          const nextHeight = Math.max(1, parseRoundedMathExpression(layerSizeDraft.height, layerVariables) ?? Number.NaN)
+          let nextWidth = Math.max(1, parseRoundedMathExpression(layerSizeDraft.width, layerVariables) ?? Number.NaN)
+          let nextHeight = Math.max(1, parseRoundedMathExpression(layerSizeDraft.height, layerVariables) ?? Number.NaN)
+          if (isShapeLayer(layer) && layer.shape === 'circle' && Number.isFinite(nextWidth) && Number.isFinite(nextHeight)) {
+            const size = Math.max(nextWidth, nextHeight)
+            nextWidth = size
+            nextHeight = size
+          }
           if (Number.isFinite(nextWidth) && Number.isFinite(nextHeight) && (nextWidth !== layer.width || nextHeight !== layer.height)) {
             layer.width = nextWidth
             layer.height = nextHeight
@@ -1021,6 +1358,10 @@ export function EditorApp() {
     })
 
     setLayerSizeDraft(current => {
+      if (isHighlightLayer(activeLayer)) {
+        return null
+      }
+
       const pendingDraft = pendingDraftSyncRef.current.layerSize
       if (pendingDraft?.layerId === activeLayer.id) {
         pendingDraftSyncRef.current.layerSize = null
@@ -1118,7 +1459,7 @@ export function EditorApp() {
         window.clearTimeout(autosaveTimeoutRef.current)
       }
     }
-  }, [canvasDraft, customVariables, documentState, history, interaction, movementStep, projectName, projectPath, tool])
+  }, [canvasDraft, customVariables, documentState, highlightSettings, history, interaction, movementStep, projectName, projectPath, shapeSettings, tool])
 
   const normalizedMovementStep = useMemo(
     () => Math.max(1, parseRoundedMathExpression(movementStep, resolvedExpressionVariables) ?? 1),
@@ -1141,7 +1482,7 @@ export function EditorApp() {
     const currentDocumentState = documentState
 
     async function ensureImages() {
-      const urls = new Set(currentDocumentState.layers.map(layer => layer.dataUrl))
+      const urls = new Set(currentDocumentState.layers.filter(isImageLayer).map(layer => layer.dataUrl))
       if (selectionPreview) {
         urls.add(selectionPreview.floatingDataUrl)
       }
@@ -1186,6 +1527,14 @@ export function EditorApp() {
 
     for (const layer of documentState.layers) {
       if (!layer.visible) continue
+      if (isHighlightLayer(layer)) {
+        drawHighlightLayer(mainContext, layer)
+        continue
+      }
+      if (isShapeLayer(layer)) {
+        drawShapeLayer(mainContext, layer)
+        continue
+      }
       const image = imageCacheRef.current.get(layer.dataUrl)
       if (!image) continue
       mainContext.save()
@@ -1214,7 +1563,7 @@ export function EditorApp() {
       overlayContext.strokeRect(layerRect.x, layerRect.y, layerRect.width, layerRect.height)
       overlayContext.restore()
 
-      if (tool === 'select') {
+      if (tool === 'select' && isImageLayer(activeLayer)) {
         for (const { rect } of getHandles(activeLayer)) {
           overlayContext.fillStyle = '#f7f8fb'
           overlayContext.strokeStyle = '#245cff'
@@ -1338,7 +1687,7 @@ export function EditorApp() {
       selection: documentState.selection,
     }
 
-    pushHistory('Delete image', documentState, nextDocument)
+    pushHistory('Delete object', documentState, nextDocument)
   }
 
   function moveLayer(layerId: string, direction: 'up' | 'down') {
@@ -1432,7 +1781,7 @@ export function EditorApp() {
         event?.preventDefault()
         deleteLayer(activeLayer.id)
       },
-      label: '[Editor] Delete selected image',
+      label: '[Editor] Delete selected object',
     },
   ])
 
@@ -1478,7 +1827,7 @@ export function EditorApp() {
     })
   }
 
-  function beginLayerMove(layer: ImageLayer, pointer: Point) {
+  function beginLayerMove(layer: EditorLayer, pointer: Point) {
     if (!documentState) return
     setDocumentState({ ...documentState, activeLayerId: layer.id, selection: null })
     setInteraction({
@@ -1501,6 +1850,39 @@ export function EditorApp() {
       pointerStart: pointer,
       layerStart: getLayerRect(layer),
       aspectRatio: layer.width / layer.height,
+    })
+  }
+
+  function beginHighlightCreation(pointer: Point) {
+    if (!documentState) return
+    const layer = createHighlightLayer([pointer], highlightSettings)
+    setDocumentState({
+      ...documentState,
+      layers: [...documentState.layers, layer],
+      activeLayerId: layer.id,
+      selection: null,
+    })
+    setInteraction({
+      type: 'creating-highlight',
+      initialDocument: cloneDocument(documentState),
+      layerId: layer.id,
+    })
+  }
+
+  function beginShapeCreation(pointer: Point) {
+    if (!documentState) return
+    const layer = createShapeLayer({ x: pointer.x, y: pointer.y, width: 1, height: 1 }, shapeSettings)
+    setDocumentState({
+      ...documentState,
+      layers: [...documentState.layers, layer],
+      activeLayerId: layer.id,
+      selection: null,
+    })
+    setInteraction({
+      type: 'creating-shape',
+      initialDocument: cloneDocument(documentState),
+      layerId: layer.id,
+      start: pointer,
     })
   }
 
@@ -1571,6 +1953,32 @@ export function EditorApp() {
     setDocumentState({ ...documentState, selection })
   }
 
+  function updateHighlightCreation(pointer: Point) {
+    if (!interaction || interaction.type !== 'creating-highlight' || !documentState) return
+    setDocumentState(
+      updateLayer(documentState, interaction.layerId, layer => {
+        if (!isHighlightLayer(layer)) return layer
+        const absolutePoints = getHighlightAbsolutePoints(layer)
+        const lastPoint = absolutePoints[absolutePoints.length - 1]
+        if (lastPoint && Math.round(lastPoint.x) === Math.round(pointer.x) && Math.round(lastPoint.y) === Math.round(pointer.y)) {
+          return layer
+        }
+        return updateHighlightLayerPoints(layer, [...absolutePoints, pointer])
+      })
+    )
+  }
+
+  function updateShapeCreation(pointer: Point) {
+    if (!interaction || interaction.type !== 'creating-shape' || !documentState) return
+    const rect = getShapeRectFromDrag(shapeSettings, interaction.start, pointer)
+    setDocumentState(
+      updateLayer(documentState, interaction.layerId, layer => {
+        if (!isShapeLayer(layer)) return layer
+        return updateShapeLayerRect(layer, rect)
+      })
+    )
+  }
+
   function updateSelectionMove(pointer: Point) {
     if (!interaction || interaction.type !== 'moving-selection' || !documentState || !selectionPreview) return
     const deltaDocumentX = Math.round(pointer.x - interaction.pointerStart.x)
@@ -1606,6 +2014,7 @@ export function EditorApp() {
     }
     const nextLayer: ImageLayer = {
       id: crypto.randomUUID(),
+      type: 'image',
       name: 'Selection',
       visible: true,
       opacity: 1,
@@ -1653,10 +2062,12 @@ export function EditorApp() {
 
     if (tool === 'select') {
       if (layer) {
-        const handle = findHandle(layer, pointer)
-        if (handle) {
-          beginResize(layer, pointer, handle)
-          return
+        if (isImageLayer(layer)) {
+          const handle = findHandle(layer, pointer)
+          if (handle) {
+            beginResize(layer, pointer, handle)
+            return
+          }
         }
         beginLayerMove(layer, pointer)
         return
@@ -1678,6 +2089,16 @@ export function EditorApp() {
         initialDocument: cloneDocument(documentState),
         start: pointer,
       })
+      return
+    }
+
+    if (tool === 'highlight') {
+      beginHighlightCreation(pointer)
+      return
+    }
+
+    if (tool === 'shape') {
+      beginShapeCreation(pointer)
     }
   }
 
@@ -1699,6 +2120,14 @@ export function EditorApp() {
       updateSelectionCreation(pointer)
       return
     }
+    if (interaction.type === 'creating-highlight') {
+      updateHighlightCreation(pointer)
+      return
+    }
+    if (interaction.type === 'creating-shape') {
+      updateShapeCreation(pointer)
+      return
+    }
     if (interaction.type === 'moving-selection') {
       updateSelectionMove(pointer)
     }
@@ -1707,7 +2136,8 @@ export function EditorApp() {
   async function handleCanvasPointerUp() {
     if (!interaction || !documentState) return
     if (interaction.type === 'moving-layer') {
-      finalizeInteraction('Move image')
+      const layer = documentState.layers.find(item => item.id === interaction.layerId)
+      finalizeInteraction(layer?.type === 'highlight' ? 'Move highlight' : layer?.type === 'shape' ? 'Move shape' : 'Move image')
       return
     }
     if (interaction.type === 'resizing-layer') {
@@ -1716,6 +2146,14 @@ export function EditorApp() {
     }
     if (interaction.type === 'creating-selection') {
       finalizeInteraction('Create selection')
+      return
+    }
+    if (interaction.type === 'creating-highlight') {
+      finalizeInteraction('Create highlight')
+      return
+    }
+    if (interaction.type === 'creating-shape') {
+      finalizeInteraction('Create shape')
       return
     }
     if (interaction.type === 'moving-selection') {
@@ -1729,12 +2167,12 @@ export function EditorApp() {
 
   function openSizeDialog(layerId: string) {
     const layer = documentState?.layers.find(item => item.id === layerId)
-    if (!layer) return
+    if (!layer || isHighlightLayer(layer)) return
     setSizeDialog({
       layerId,
       width: String(Math.round(layer.width)),
       height: String(Math.round(layer.height)),
-      keepAspectRatio: true,
+      keepAspectRatio: isImageLayer(layer),
     })
   }
 
@@ -1749,6 +2187,8 @@ export function EditorApp() {
   }
 
   function openImagePreviewDialog(layerId: string) {
+    const layer = documentState?.layers.find(item => item.id === layerId)
+    if (!layer || !isImageLayer(layer)) return
     setImagePreviewDialog({
       layerId,
       zoom: 1,
@@ -1758,7 +2198,7 @@ export function EditorApp() {
   function applyExactSize() {
     if (!documentState || !sizeDialog) return
     const layer = documentState.layers.find(item => item.id === sizeDialog.layerId)
-    if (!layer) return
+    if (!layer || isHighlightLayer(layer)) return
 
     const sizeDialogVariables: ExpressionVariables = {
       ...resolvedExpressionVariables,
@@ -1774,7 +2214,11 @@ export function EditorApp() {
       return
     }
 
-    if (sizeDialog.keepAspectRatio) {
+    if (isShapeLayer(layer) && layer.shape === 'circle') {
+      const size = Math.max(width, height)
+      width = size
+      height = size
+    } else if (sizeDialog.keepAspectRatio && isImageLayer(layer)) {
       const ratio = layer.width / layer.height
       if (parseRoundedMathExpression(sizeDialog.width, sizeDialogVariables) !== Math.round(layer.width)) {
         height = Math.max(1, Math.round(width / ratio))
@@ -1848,9 +2292,15 @@ export function EditorApp() {
 
   function applyInspectorSize() {
     if (!documentState || !activeLayer || !layerSizeDraft || layerSizeDraft.layerId !== activeLayer.id) return
+    if (isHighlightLayer(activeLayer)) return
 
-    const width = Math.max(1, parseRoundedMathExpression(layerSizeDraft.width, activeLayerExpressionVariables) ?? Number.NaN)
-    const height = Math.max(1, parseRoundedMathExpression(layerSizeDraft.height, activeLayerExpressionVariables) ?? Number.NaN)
+    let width = Math.max(1, parseRoundedMathExpression(layerSizeDraft.width, activeLayerExpressionVariables) ?? Number.NaN)
+    let height = Math.max(1, parseRoundedMathExpression(layerSizeDraft.height, activeLayerExpressionVariables) ?? Number.NaN)
+    if (isShapeLayer(activeLayer) && Number.isFinite(width) && Number.isFinite(height) && activeLayer.shape === 'circle') {
+      const size = Math.max(width, height)
+      width = size
+      height = size
+    }
     if (!Number.isFinite(width) || !Number.isFinite(height)) {
       setErrorMessage('Width and height must be valid numbers or simple math expressions')
       return
@@ -1864,6 +2314,28 @@ export function EditorApp() {
 
     pendingDraftSyncRef.current.layerSize = layerSizeDraft
     pushHistory('Set exact size', documentState, nextDocument)
+  }
+
+  function applyActiveHighlightStyle(changes: Partial<Pick<HighlightLayer, 'color' | 'opacity' | 'brushShape' | 'brushSize'>>) {
+    if (!documentState || !activeHighlight) return
+    const nextDocument = updateLayer(documentState, activeHighlight.id, layer => {
+      if (!isHighlightLayer(layer)) return layer
+      return updateHighlightLayerStyle(layer, changes)
+    })
+    if (documentsEqual(documentState, nextDocument)) return
+    pushHistory('Update highlight', documentState, nextDocument)
+  }
+
+  function applyActiveShapeStyle(
+    changes: Partial<Pick<ShapeLayer, 'shape' | 'fillColor' | 'borderColor' | 'borderRadius' | 'opacity' | 'width' | 'height'>>
+  ) {
+    if (!documentState || !activeShape) return
+    const nextDocument = updateLayer(documentState, activeShape.id, layer => {
+      if (!isShapeLayer(layer)) return layer
+      return updateShapeLayerStyle(layer, changes)
+    })
+    if (documentsEqual(documentState, nextDocument)) return
+    pushHistory('Update shape', documentState, nextDocument)
   }
 
   function applySelectionPosition() {
@@ -2048,7 +2520,14 @@ export function EditorApp() {
   const layerMenu = useContextMenu<CanvasContextMenuItem>()
   const selectionContextLayerId = layerMenu.item?.type === 'selection' ? layerMenu.item.layerId : null
   const contextLayerId = layerMenu.item?.type === 'layer' ? layerMenu.item.layerId : selectionContextLayerId
-  const previewLayer = imagePreviewDialog && documentState ? documentState.layers.find(layer => layer.id === imagePreviewDialog.layerId) ?? null : null
+  const contextLayer = contextLayerId && documentState ? documentState.layers.find(layer => layer.id === contextLayerId) ?? null : null
+  const previewLayer =
+    imagePreviewDialog && documentState
+      ? (() => {
+          const layer = documentState.layers.find(item => item.id === imagePreviewDialog.layerId) ?? null
+          return layer && isImageLayer(layer) ? layer : null
+        })()
+      : null
   const menuItems =
     layerMenu.item?.type === 'selection'
       ? [
@@ -2061,16 +2540,16 @@ export function EditorApp() {
             onClick: () => void saveSelectionImage(),
           },
           contextLayerId ? { isSeparator: true as const } : null,
-          contextLayerId
+          contextLayer && isImageLayer(contextLayer)
             ? {
                 view: 'Preview Image...',
-                onClick: () => openImagePreviewDialog(contextLayerId),
+                onClick: () => openImagePreviewDialog(contextLayer.id),
               }
             : null,
           contextLayerId ? { isSeparator: true as const } : null,
           contextLayerId
             ? {
-                view: 'Delete Image',
+                view: 'Delete Object',
                 onClick: () => deleteLayer(contextLayerId),
               }
             : null,
@@ -2081,33 +2560,37 @@ export function EditorApp() {
             onClick: () => openPositionDialog(contextLayerId),
               }
             : null,
-          contextLayerId
+          contextLayer && !isHighlightLayer(contextLayer)
             ? {
-            view: 'Set Size...',
-            onClick: () => openSizeDialog(contextLayerId),
-              }
-            : null,
+                view: 'Set Size...',
+                onClick: () => openSizeDialog(contextLayer.id),
+                }
+             : null,
         ]
-      : layerMenu.item?.type === 'layer' && contextLayerId
+      : layerMenu.item?.type === 'layer' && contextLayer
         ? [
+            isImageLayer(contextLayer)
+              ? {
+                  view: 'Preview Image...',
+                  onClick: () => openImagePreviewDialog(contextLayer.id),
+                }
+              : null,
+            isImageLayer(contextLayer) ? { isSeparator: true as const } : null,
             {
-              view: 'Preview Image...',
-              onClick: () => openImagePreviewDialog(contextLayerId),
-            },
-            { isSeparator: true as const },
-            {
-              view: 'Delete Image',
-              onClick: () => deleteLayer(contextLayerId),
+              view: 'Delete Object',
+              onClick: () => deleteLayer(contextLayer.id),
             },
             { isSeparator: true as const },
             {
               view: 'Set Position...',
-              onClick: () => openPositionDialog(contextLayerId),
+              onClick: () => openPositionDialog(contextLayer.id),
             },
-            {
-              view: 'Set Size...',
-              onClick: () => openSizeDialog(contextLayerId),
-            },
+            !isHighlightLayer(contextLayer)
+              ? {
+                  view: 'Set Size...',
+                  onClick: () => openSizeDialog(contextLayer.id),
+                }
+              : null,
           ]
         : []
 
@@ -2118,7 +2601,7 @@ export function EditorApp() {
           <button
             className={cn('btn btn-square btn-sm', tool === 'select' ? 'btn-info' : 'btn-ghost')}
             onClick={() => setTool('select')}
-            title="Select and transform images"
+            title="Select and transform objects"
           >
             <MousePointer2Icon className="size-4" />
           </button>
@@ -2128,6 +2611,20 @@ export function EditorApp() {
             title="Create a rectangular canvas selection"
           >
             <ScanLineIcon className="size-4" />
+          </button>
+          <button
+            className={cn('btn btn-square btn-sm', tool === 'highlight' ? 'btn-info' : 'btn-ghost')}
+            onClick={() => setTool('highlight')}
+            title="Paint highlight objects"
+          >
+            <span className="text-xs font-semibold">H</span>
+          </button>
+          <button
+            className={cn('btn btn-square btn-sm', tool === 'shape' ? 'btn-info' : 'btn-ghost')}
+            onClick={() => setTool('shape')}
+            title="Create shape objects"
+          >
+            <span className="text-xs font-semibold">S</span>
           </button>
           <div className="mt-6 flex flex-col gap-2">
             <button className="btn btn-square btn-sm btn-ghost" onClick={handleUndo} disabled={!history.past.length} title="Undo">
@@ -2574,6 +3071,156 @@ export function EditorApp() {
               </section>
 
               <section>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">Highlight Tool</div>
+                <div className="space-y-3 rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
+                  <div className="text-xs text-base-content/55">
+                    Drag on the canvas in highlight mode to create a movable standalone highlight object.
+                  </div>
+                  <div className="grid grid-cols-[auto_1fr] items-center gap-3">
+                    <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Color</span>
+                    <input
+                      type="color"
+                      className="input input-xs h-9 w-full p-1"
+                      value={highlightSettings.color}
+                      onChange={event =>
+                        setHighlightSettings(current => ({
+                          ...current,
+                          color: event.target.value,
+                        }))
+                      }
+                    />
+                    <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Opacity</span>
+                    <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                      <input
+                        type="range"
+                        min="0.05"
+                        max="1"
+                        step="0.05"
+                        className="range range-xs"
+                        value={highlightSettings.opacity}
+                        onChange={event =>
+                          setHighlightSettings(current => ({
+                            ...current,
+                            opacity: clampHighlightOpacity(Number(event.target.value)),
+                          }))
+                        }
+                      />
+                      <span className="w-10 text-right text-xs">{Math.round(highlightSettings.opacity * 100)}%</span>
+                    </div>
+                    <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Brush</span>
+                    <select
+                      className="select select-xs"
+                      value={highlightSettings.brushShape}
+                      onChange={event =>
+                        setHighlightSettings(current => ({
+                          ...current,
+                          brushShape: event.target.value as HighlightBrushShape,
+                        }))
+                      }
+                    >
+                      <option value="circle">Circle</option>
+                      <option value="square">Square</option>
+                    </select>
+                    <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Size</span>
+                    <input
+                      type="number"
+                      min={4}
+                      max={256}
+                      className="input input-xs"
+                      value={highlightSettings.brushSize}
+                      onChange={event =>
+                        setHighlightSettings(current => ({
+                          ...current,
+                          brushSize: clampHighlightBrushSize(Number(event.target.value) || current.brushSize),
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">Shape Tool</div>
+                <div className="space-y-3 rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
+                  <div className="text-xs text-base-content/55">
+                    Drag on the canvas in shape mode to create a rectangle, circle, or ellipse object.
+                  </div>
+                  <div className="grid grid-cols-[auto_1fr] items-center gap-3">
+                    <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Type</span>
+                    <select
+                      className="select select-xs"
+                      value={shapeSettings.shape}
+                      onChange={event =>
+                        setShapeSettings(current => ({
+                          ...current,
+                          shape: event.target.value as ShapeType,
+                        }))
+                      }
+                    >
+                      <option value="rectangle">Rectangle</option>
+                      <option value="circle">Circle</option>
+                      <option value="ellipse">Ellipse</option>
+                    </select>
+                    <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Fill</span>
+                    <input
+                      type="color"
+                      className="input input-xs h-9 w-full p-1"
+                      value={shapeSettings.fillColor}
+                      onChange={event =>
+                        setShapeSettings(current => ({
+                          ...current,
+                          fillColor: event.target.value,
+                        }))
+                      }
+                    />
+                    <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Border</span>
+                    <input
+                      type="color"
+                      className="input input-xs h-9 w-full p-1"
+                      value={shapeSettings.borderColor}
+                      onChange={event =>
+                        setShapeSettings(current => ({
+                          ...current,
+                          borderColor: event.target.value,
+                        }))
+                      }
+                    />
+                    <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Radius</span>
+                    <input
+                      type="number"
+                      min={0}
+                      className="input input-xs"
+                      value={shapeSettings.borderRadius}
+                      onChange={event =>
+                        setShapeSettings(current => ({
+                          ...current,
+                          borderRadius: Math.max(0, Math.round(Number(event.target.value) || 0)),
+                        }))
+                      }
+                    />
+                    <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Opacity</span>
+                    <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                      <input
+                        type="range"
+                        min="0.05"
+                        max="1"
+                        step="0.05"
+                        className="range range-xs"
+                        value={shapeSettings.opacity}
+                        onChange={event =>
+                          setShapeSettings(current => ({
+                            ...current,
+                            opacity: clampShapeOpacity(Number(event.target.value)),
+                          }))
+                        }
+                      />
+                      <span className="w-10 text-right text-xs">{Math.round(shapeSettings.opacity * 100)}%</span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section>
                 <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">Selection</div>
                 <div className="rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
                   {documentState?.selection && selectionDraft ? (
@@ -2675,7 +3322,7 @@ export function EditorApp() {
               </section>
 
               <section>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">Active image</div>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">Active Object</div>
                 <div className="rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
                   {activeLayer ? (
                     <div className="space-y-3">
@@ -2683,10 +3330,13 @@ export function EditorApp() {
                         Use math and variables like `imageX`, `imageY`, `imageWidth`, `imageHeight`, `canvasWidth`, and `canvasHeight`.
                       </div>
                       <div className="font-medium text-base-content">{activeLayer.name}</div>
+                      <div className="text-xs uppercase tracking-[0.14em] text-base-content/50">
+                        {activeLayer.type === 'highlight' ? 'Highlight' : activeLayer.type === 'shape' ? 'Shape' : 'Image'}
+                      </div>
                       <div>Position: {formatPixels(activeLayer.x)}, {formatPixels(activeLayer.y)}</div>
                       <div>Display size: {formatPixels(activeLayer.width)} x {formatPixels(activeLayer.height)}</div>
-                      <div>Raster size: {formatPixels(activeLayer.pixelWidth)} x {formatPixels(activeLayer.pixelHeight)}</div>
-                      {layerPositionDraft && layerSizeDraft && layerPositionDraft.layerId === activeLayer.id && layerSizeDraft.layerId === activeLayer.id && (
+                      {isImageLayer(activeLayer) && <div>Raster size: {formatPixels(activeLayer.pixelWidth)} x {formatPixels(activeLayer.pixelHeight)}</div>}
+                      {layerPositionDraft && layerPositionDraft.layerId === activeLayer.id && (
                         <>
                           <form
                             className="space-y-2"
@@ -2728,58 +3378,181 @@ export function EditorApp() {
                               </div>
                             </div>
                           </form>
-
-                          <form
-                            className="space-y-2"
-                            onSubmit={event => {
-                              event.preventDefault()
-                              applyInspectorSize()
-                            }}
-                          >
-                            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Exact size</div>
-                            <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
-                              <label className="form-control gap-1">
-                                <span className="label text-[11px]">W</span>
-                                <input
-                                  className="input input-xs"
-                                  value={layerSizeDraft.width}
-                                  onChange={event =>
-                                    setLayerSizeDraft(current =>
-                                      current ? { ...current, width: event.target.value } : current
-                                    )
-                                  }
-                                />
-                              </label>
-                              <label className="form-control gap-1">
-                                <span className="label text-[11px]">H</span>
-                                <input
-                                  className="input input-xs"
-                                  value={layerSizeDraft.height}
-                                  onChange={event =>
-                                    setLayerSizeDraft(current =>
-                                      current ? { ...current, height: event.target.value } : current
-                                    )
-                                  }
-                                />
-                              </label>
-                              <div className="flex items-end">
-                                <button type="submit" className="btn btn-xs btn-info w-full" disabled={isInspectorSizeUnchanged}>
-                                  Apply
-                                </button>
-                              </div>
-                            </div>
-                          </form>
                         </>
+                      )}
+                      {!isHighlightLayer(activeLayer) && layerSizeDraft && layerSizeDraft.layerId === activeLayer.id && (
+                        <form
+                          className="space-y-2"
+                          onSubmit={event => {
+                            event.preventDefault()
+                            applyInspectorSize()
+                          }}
+                        >
+                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Exact size</div>
+                          <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                            <label className="form-control gap-1">
+                              <span className="label text-[11px]">W</span>
+                              <input
+                                className="input input-xs"
+                                value={layerSizeDraft.width}
+                                onChange={event =>
+                                  setLayerSizeDraft(current =>
+                                    current ? { ...current, width: event.target.value } : current
+                                  )
+                                }
+                              />
+                            </label>
+                            <label className="form-control gap-1">
+                              <span className="label text-[11px]">H</span>
+                              <input
+                                className="input input-xs"
+                                value={layerSizeDraft.height}
+                                onChange={event =>
+                                  setLayerSizeDraft(current =>
+                                    current ? { ...current, height: event.target.value } : current
+                                  )
+                                }
+                              />
+                            </label>
+                            <div className="flex items-end">
+                              <button type="submit" className="btn btn-xs btn-info w-full" disabled={isInspectorSizeUnchanged}>
+                                Apply
+                              </button>
+                            </div>
+                          </div>
+                        </form>
+                      )}
+                      {activeHighlight && (
+                        <div className="space-y-3 rounded-xl border border-base-content/10 bg-base-100/40 p-3">
+                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Highlight style</div>
+                          <div className="grid grid-cols-[auto_1fr] items-center gap-3">
+                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Color</span>
+                            <input
+                              type="color"
+                              className="input input-xs h-9 w-full p-1"
+                              value={activeHighlight.color}
+                              onChange={event => applyActiveHighlightStyle({ color: event.target.value })}
+                            />
+                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Opacity</span>
+                            <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                              <input
+                                type="range"
+                                min="0.05"
+                                max="1"
+                                step="0.05"
+                                className="range range-xs"
+                                value={activeHighlight.opacity}
+                                onChange={event =>
+                                  applyActiveHighlightStyle({
+                                    opacity: clampHighlightOpacity(Number(event.target.value)),
+                                  })
+                                }
+                              />
+                              <span className="w-10 text-right text-xs">{Math.round(activeHighlight.opacity * 100)}%</span>
+                            </div>
+                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Brush</span>
+                            <select
+                              className="select select-xs"
+                              value={activeHighlight.brushShape}
+                              onChange={event =>
+                                applyActiveHighlightStyle({
+                                  brushShape: event.target.value as HighlightBrushShape,
+                                })
+                              }
+                            >
+                              <option value="circle">Circle</option>
+                              <option value="square">Square</option>
+                            </select>
+                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Size</span>
+                            <input
+                              type="number"
+                              min={4}
+                              max={256}
+                              className="input input-xs"
+                              value={activeHighlight.brushSize}
+                              onChange={event =>
+                                applyActiveHighlightStyle({
+                                  brushSize: clampHighlightBrushSize(Number(event.target.value) || activeHighlight.brushSize),
+                                })
+                              }
+                            />
+                          </div>
+                        </div>
+                      )}
+                      {activeShape && (
+                        <div className="space-y-3 rounded-xl border border-base-content/10 bg-base-100/40 p-3">
+                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Shape style</div>
+                          <div className="grid grid-cols-[auto_1fr] items-center gap-3">
+                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Type</span>
+                            <select
+                              className="select select-xs"
+                              value={activeShape.shape}
+                              onChange={event =>
+                                applyActiveShapeStyle({
+                                  shape: event.target.value as ShapeType,
+                                })
+                              }
+                            >
+                              <option value="rectangle">Rectangle</option>
+                              <option value="circle">Circle</option>
+                              <option value="ellipse">Ellipse</option>
+                            </select>
+                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Fill</span>
+                            <input
+                              type="color"
+                              className="input input-xs h-9 w-full p-1"
+                              value={activeShape.fillColor}
+                              onChange={event => applyActiveShapeStyle({ fillColor: event.target.value })}
+                            />
+                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Border</span>
+                            <input
+                              type="color"
+                              className="input input-xs h-9 w-full p-1"
+                              value={activeShape.borderColor}
+                              onChange={event => applyActiveShapeStyle({ borderColor: event.target.value })}
+                            />
+                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Radius</span>
+                            <input
+                              type="number"
+                              min={0}
+                              className="input input-xs"
+                              value={activeShape.borderRadius}
+                              disabled={activeShape.shape !== 'rectangle'}
+                              onChange={event =>
+                                applyActiveShapeStyle({
+                                  borderRadius: Math.max(0, Math.round(Number(event.target.value) || 0)),
+                                })
+                              }
+                            />
+                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Opacity</span>
+                            <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                              <input
+                                type="range"
+                                min="0.05"
+                                max="1"
+                                step="0.05"
+                                className="range range-xs"
+                                value={activeShape.opacity}
+                                onChange={event =>
+                                  applyActiveShapeStyle({
+                                    opacity: clampShapeOpacity(Number(event.target.value)),
+                                  })
+                                }
+                              />
+                              <span className="w-10 text-right text-xs">{Math.round(activeShape.opacity * 100)}%</span>
+                            </div>
+                          </div>
+                        </div>
                       )}
                     </div>
                   ) : (
-                    <div>Select an image to inspect or resize it.</div>
+                    <div>Select an object to inspect or move it.</div>
                   )}
                 </div>
               </section>
 
               <section>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">Layers</div>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">Objects</div>
                 <div className="rounded-2xl border border-base-content/10 bg-base-200/60 p-3 text-sm text-base-content/70">
                   {documentState && documentState.layers.length > 0 ? (
                     <div className="space-y-2">
@@ -2803,6 +3576,7 @@ export function EditorApp() {
                               onClick={() => setDocumentState(current => (current ? { ...current, activeLayerId: layer.id } : current))}
                             >
                               <div className="truncate font-medium">{layer.name}</div>
+                              <div className="text-[11px] uppercase tracking-[0.14em] text-base-content/45">{layer.type}</div>
                             </button>
                             <button className="btn btn-xs btn-ghost" onClick={() => moveLayer(layer.id, 'up')} disabled={!canMoveUp} title="Move toward front">
                               ↑
@@ -2810,7 +3584,7 @@ export function EditorApp() {
                             <button className="btn btn-xs btn-ghost" onClick={() => moveLayer(layer.id, 'down')} disabled={!canMoveDown} title="Move toward back">
                               ↓
                             </button>
-                            <button className="btn btn-xs btn-ghost text-error" onClick={() => deleteLayer(layer.id)} title="Delete image">
+                            <button className="btn btn-xs btn-ghost text-error" onClick={() => deleteLayer(layer.id)} title="Delete object">
                               ×
                             </button>
                           </div>
@@ -2818,7 +3592,7 @@ export function EditorApp() {
                       })}
                     </div>
                   ) : (
-                    <div>No images placed yet.</div>
+                    <div>No objects yet.</div>
                   )}
                 </div>
               </section>
@@ -2835,7 +3609,10 @@ export function EditorApp() {
 
           <div className="flex items-center justify-between border-t border-base-content/10 px-4 py-2 text-xs text-base-content/55">
             <div>
-              Tool: <span className="text-base-content/80">{tool === 'select' ? 'Select' : 'Marquee'}</span>
+              Tool:{' '}
+              <span className="text-base-content/80">
+                {tool === 'select' ? 'Select' : tool === 'marquee' ? 'Marquee' : tool === 'highlight' ? 'Highlight' : 'Shape'}
+              </span>
             </div>
             <div>
               Shortcuts: <kbd className="kbd kbd-xs">Cmd</kbd> + <kbd className="kbd kbd-xs">Z</kbd> undo, <kbd className="kbd kbd-xs">Shift</kbd> + <kbd className="kbd kbd-xs">Cmd</kbd> + <kbd className="kbd kbd-xs">Z</kbd> redo
@@ -2845,7 +3622,7 @@ export function EditorApp() {
       </div>
 
       {sizeDialog && (
-        <Dialog title="Set Image Size" onClose={() => setSizeDialog(null)} className="max-w-md">
+        <Dialog title="Set Object Size" onClose={() => setSizeDialog(null)} className="max-w-md">
           <form
             className="flex flex-col gap-4"
             onSubmit={event => {
@@ -2920,17 +3697,22 @@ export function EditorApp() {
                 }}
               />
             </label>
-            <label className="label cursor-pointer justify-start gap-3">
-              <input
-                type="checkbox"
-                className="checkbox"
-                checked={sizeDialog.keepAspectRatio}
-                onChange={event =>
-                  setSizeDialog(current => (current ? { ...current, keepAspectRatio: event.target.checked } : current))
-                }
-              />
-              Keep aspect ratio
-            </label>
+            {(() => {
+              const layer = documentState?.layers.find(item => item.id === sizeDialog.layerId)
+              return layer && isImageLayer(layer) ? (
+                <label className="label cursor-pointer justify-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="checkbox"
+                    checked={sizeDialog.keepAspectRatio}
+                    onChange={event =>
+                      setSizeDialog(current => (current ? { ...current, keepAspectRatio: event.target.checked } : current))
+                    }
+                  />
+                  Keep aspect ratio
+                </label>
+              ) : null
+            })()}
             <div className="modal-action mt-0">
               <button type="submit" className="btn btn-primary">
                 Apply
@@ -2944,7 +3726,7 @@ export function EditorApp() {
       )}
 
       {positionDialog && (
-        <Dialog title="Set Image Placement" onClose={() => setPositionDialog(null)} className="max-w-md">
+        <Dialog title="Set Object Placement" onClose={() => setPositionDialog(null)} className="max-w-md">
           <form
             className="flex flex-col gap-4"
             onSubmit={event => {
@@ -2952,7 +3734,7 @@ export function EditorApp() {
               applyExactPosition()
             }}
           >
-            <p className="text-sm text-base-content/70">Coordinates use the top-left corner of the selected image on the document canvas. Use math and variables like `imageX`, `imageY`, `canvasWidth`, and `canvasHeight`.</p>
+            <p className="text-sm text-base-content/70">Coordinates use the top-left corner of the selected object on the document canvas. Use math and variables like `imageX`, `imageY`, `canvasWidth`, and `canvasHeight`.</p>
             <label className="form-control gap-2">
               <span className="label">X</span>
               <input

@@ -1,4 +1,4 @@
-import { EditorDocument, ImageLayer, PixelSelection } from './types'
+import { EditorDocument, EditorLayer, HighlightLayer, ImageLayer, PixelSelection, ShapeLayer } from './types'
 
 export async function readFileAsDataUrl(file: File): Promise<string> {
   return await new Promise((resolve, reject) => {
@@ -25,6 +25,7 @@ export async function createLayerFromFile(file: File, document: EditorDocument):
 
   return {
     id: crypto.randomUUID(),
+    type: 'image',
     name: file.name,
     visible: true,
     opacity: 1,
@@ -36,6 +37,69 @@ export async function createLayerFromFile(file: File, document: EditorDocument):
     pixelHeight: image.naturalHeight,
     dataUrl,
   }
+}
+
+function drawHighlightLayer(context: CanvasRenderingContext2D, layer: HighlightLayer) {
+  if (!layer.points.length) return
+
+  context.save()
+  context.globalAlpha = layer.opacity
+  context.fillStyle = layer.color
+  context.strokeStyle = layer.color
+  context.lineWidth = layer.brushSize
+  context.lineCap = layer.brushShape === 'circle' ? 'round' : 'square'
+  context.lineJoin = layer.brushShape === 'circle' ? 'round' : 'miter'
+
+  if (layer.points.length === 1) {
+    const point = layer.points[0]
+    if (layer.brushShape === 'circle') {
+      context.beginPath()
+      context.arc(layer.x + point.x, layer.y + point.y, layer.brushSize / 2, 0, Math.PI * 2)
+      context.fill()
+    } else {
+      const size = layer.brushSize
+      context.fillRect(layer.x + point.x - size / 2, layer.y + point.y - size / 2, size, size)
+    }
+    context.restore()
+    return
+  }
+
+  context.beginPath()
+  context.moveTo(layer.x + layer.points[0].x, layer.y + layer.points[0].y)
+  for (let index = 1; index < layer.points.length; index += 1) {
+    const point = layer.points[index]
+    context.lineTo(layer.x + point.x, layer.y + point.y)
+  }
+  context.stroke()
+  context.restore()
+}
+
+function drawShapeLayer(context: CanvasRenderingContext2D, layer: ShapeLayer) {
+  context.save()
+  context.globalAlpha = layer.opacity
+  context.fillStyle = layer.fillColor
+  context.strokeStyle = layer.borderColor
+  context.lineWidth = 2
+
+  if (layer.shape === 'rectangle') {
+    context.beginPath()
+    context.roundRect(layer.x, layer.y, layer.width, layer.height, layer.borderRadius)
+  } else {
+    context.beginPath()
+    context.ellipse(
+      layer.x + layer.width / 2,
+      layer.y + layer.height / 2,
+      layer.width / 2,
+      layer.height / 2,
+      0,
+      0,
+      Math.PI * 2
+    )
+  }
+
+  context.fill()
+  context.stroke()
+  context.restore()
 }
 
 async function renderLayerToCanvas(layer: ImageLayer): Promise<HTMLCanvasElement> {
@@ -66,6 +130,14 @@ async function renderDocumentToCanvas(documentState: EditorDocument): Promise<HT
 
   for (const layer of documentState.layers) {
     if (!layer.visible) continue
+    if (layer.type === 'highlight') {
+      drawHighlightLayer(context, layer)
+      continue
+    }
+    if (layer.type === 'shape') {
+      drawShapeLayer(context, layer)
+      continue
+    }
     const image = await loadImageElement(layer.dataUrl)
     context.save()
     context.globalAlpha = layer.opacity
@@ -104,7 +176,7 @@ function getSelectionIntersection(selection: PixelSelection, layer: ImageLayer):
 }
 
 export async function cutSelectionFromDocument(documentState: EditorDocument, selection: PixelSelection): Promise<{
-  layers: ImageLayer[]
+  layers: EditorLayer[]
   floatingDataUrl: string
 }> {
   const documentCanvas = await renderDocumentToCanvas(documentState)
@@ -131,6 +203,7 @@ export async function cutSelectionFromDocument(documentState: EditorDocument, se
   const layers = await Promise.all(
     documentState.layers.map(async layer => {
       if (!layer.visible) return layer
+      if (layer.type === 'highlight' || layer.type === 'shape') return layer
       const intersection = getSelectionIntersection(selection, layer)
       if (!intersection) return layer
 

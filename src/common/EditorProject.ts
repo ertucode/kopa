@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const editorProjectLayerSchema = z.object({
+const editorProjectLayerBaseSchema = z.object({
   id: z.string(),
   name: z.string(),
   visible: z.boolean(),
@@ -9,10 +9,53 @@ export const editorProjectLayerSchema = z.object({
   y: z.number(),
   width: z.number(),
   height: z.number(),
+})
+
+const editorProjectImageLayerSchema = editorProjectLayerBaseSchema.extend({
+  type: z.literal('image'),
   pixelWidth: z.number(),
   pixelHeight: z.number(),
   assetId: z.string(),
 })
+
+const legacyEditorProjectImageLayerSchema = editorProjectLayerBaseSchema
+  .extend({
+    pixelWidth: z.number(),
+    pixelHeight: z.number(),
+    assetId: z.string(),
+  })
+  .transform(layer => ({
+    ...layer,
+    type: 'image' as const,
+  }))
+
+const editorProjectHighlightLayerSchema = editorProjectLayerBaseSchema.extend({
+  type: z.literal('highlight'),
+  color: z.string(),
+  brushSize: z.number(),
+  brushShape: z.enum(['circle', 'square']),
+  points: z.array(
+    z.object({
+      x: z.number(),
+      y: z.number(),
+    })
+  ),
+})
+
+const editorProjectShapeLayerSchema = editorProjectLayerBaseSchema.extend({
+  type: z.literal('shape'),
+  shape: z.enum(['rectangle', 'circle', 'ellipse']),
+  fillColor: z.string(),
+  borderColor: z.string(),
+  borderRadius: z.number(),
+})
+
+export const editorProjectLayerSchema = z.union([
+  editorProjectImageLayerSchema,
+  editorProjectHighlightLayerSchema,
+  editorProjectShapeLayerSchema,
+  legacyEditorProjectImageLayerSchema,
+])
 
 export const editorProjectSelectionSchema = z.object({
   x: z.number(),
@@ -59,6 +102,7 @@ const editorProjectMoveLayerChangeSchema = z.object({
 })
 
 const editorProjectLayerPatchSchema = z.object({
+  type: z.enum(['image', 'highlight', 'shape']).optional(),
   name: z.string().optional(),
   visible: z.boolean().optional(),
   opacity: z.number().optional(),
@@ -69,6 +113,19 @@ const editorProjectLayerPatchSchema = z.object({
   pixelWidth: z.number().optional(),
   pixelHeight: z.number().optional(),
   assetId: z.string().optional(),
+  color: z.string().optional(),
+  brushSize: z.number().optional(),
+  brushShape: z.enum(['circle', 'square']).optional(),
+  shape: z.enum(['rectangle', 'circle', 'ellipse']).optional(),
+  fillColor: z.string().optional(),
+  borderColor: z.string().optional(),
+  borderRadius: z.number().optional(),
+  points: z.array(
+    z.object({
+      x: z.number(),
+      y: z.number(),
+    })
+  ).optional(),
 })
 
 const editorProjectUpdateLayerChangeSchema = z.object({
@@ -96,7 +153,7 @@ export const editorProjectAssetSchema = z.object({
 })
 
 export const editorProjectUiStateSchema = z.object({
-  tool: z.enum(['select', 'marquee']),
+  tool: z.enum(['select', 'marquee', 'highlight', 'shape']),
   canvasDraft: z.object({
     width: z.string(),
     height: z.string(),
@@ -141,6 +198,30 @@ export const editorProjectUiStateSchema = z.object({
       expression: z.string(),
     })
   ).default([]),
+  highlightSettings: z.object({
+    color: z.string(),
+    opacity: z.number(),
+    brushShape: z.enum(['circle', 'square']),
+    brushSize: z.number(),
+  }).default({
+    color: '#facc15',
+    opacity: 0.35,
+    brushShape: 'circle',
+    brushSize: 32,
+  }),
+  shapeSettings: z.object({
+    shape: z.enum(['rectangle', 'circle', 'ellipse']),
+    fillColor: z.string(),
+    borderColor: z.string(),
+    borderRadius: z.number(),
+    opacity: z.number(),
+  }).default({
+    shape: 'rectangle',
+    fillColor: '#60a5fa',
+    borderColor: '#dbeafe',
+    borderRadius: 16,
+    opacity: 0.8,
+  }),
 })
 
 export const editorProjectFileSchema = z.object({

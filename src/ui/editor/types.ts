@@ -1,6 +1,6 @@
-export type EditorTool = 'select' | 'marquee'
+export type EditorTool = 'select' | 'marquee' | 'highlight' | 'shape'
 
-export type ImageLayer = {
+export type LayerBase = {
   id: string
   name: string
   visible: boolean
@@ -9,10 +9,41 @@ export type ImageLayer = {
   y: number
   width: number
   height: number
+}
+
+export type ImageLayer = LayerBase & {
+  type: 'image'
   pixelWidth: number
   pixelHeight: number
   dataUrl: string
 }
+
+export type HighlightBrushShape = 'circle' | 'square'
+
+export type HighlightPoint = {
+  x: number
+  y: number
+}
+
+export type HighlightLayer = LayerBase & {
+  type: 'highlight'
+  color: string
+  brushSize: number
+  brushShape: HighlightBrushShape
+  points: HighlightPoint[]
+}
+
+export type ShapeType = 'rectangle' | 'circle' | 'ellipse'
+
+export type ShapeLayer = LayerBase & {
+  type: 'shape'
+  shape: ShapeType
+  fillColor: string
+  borderColor: string
+  borderRadius: number
+}
+
+export type EditorLayer = ImageLayer | HighlightLayer | ShapeLayer
 
 export type PixelSelection = {
   x: number
@@ -26,7 +57,7 @@ export type EditorDocument = {
   height: number
   pasteWidth: number | null
   pasteHeight: number | null
-  layers: ImageLayer[]
+  layers: EditorLayer[]
   activeLayerId: string | null
   selection: PixelSelection | null
 }
