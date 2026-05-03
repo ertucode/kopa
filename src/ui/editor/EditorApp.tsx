@@ -73,6 +73,12 @@ import {
 } from './editorSession'
 import { useToolStore } from './editorSimpleStores'
 import { Typescript } from '@common/Typescript'
+import { Accordion } from '@/lib/components/accordion'
+import { Select } from '@/lib/components/select'
+import { InputColor } from '@/lib/components/input-color'
+import { Input } from '@/lib/components/input'
+import { GridCols } from '@/lib/components/grid-cols'
+import { Label } from '@/lib/components/label'
 
 const DOCUMENT_PRESETS: NewDocumentPreset[] = [
   { label: 'Avatar', width: 512, height: 512 },
@@ -2349,164 +2355,148 @@ export function EditorApp() {
           </div>
           <div className="flex flex-col gap-2">
             <section>
-              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
-                Highlight Tool
-              </div>
-              <div className="space-y-3 rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
-                <div className="grid grid-cols-[auto_1fr] items-center gap-3">
-                  <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Color</span>
-                  <input
-                    type="color"
-                    className="input input-xs h-9 w-full p-1"
-                    value={highlightSettings.color}
-                    onChange={event =>
-                      setHighlightSettings(current => ({
-                        ...current,
-                        color: event.target.value,
-                      }))
-                    }
-                  />
-                  <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Opacity</span>
-                  <div className="grid grid-cols-[1fr_auto] items-center gap-2">
-                    <input
-                      type="range"
-                      min="0.05"
-                      max="1"
-                      step="0.05"
-                      className="range range-xs"
-                      value={highlightSettings.opacity}
+              <Accordion title="Highlight Tool" defaultOpen>
+                <div className="space-y-3 bg-base-200/60 text-sm text-base-content/70">
+                  <div className="grid grid-cols-[auto_1fr] items-center gap-0">
+                    <Label>Color</Label>
+                    <InputColor
+                      value={highlightSettings.color}
                       onChange={event =>
                         setHighlightSettings(current => ({
                           ...current,
-                          opacity: clampHighlightOpacity(Number(event.target.value)),
+                          color: event,
                         }))
                       }
                     />
-                    <span className="w-10 text-right text-xs">{Math.round(highlightSettings.opacity * 100)}%</span>
+                    <Label>Opacity</Label>
+                    <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                      <Input
+                        type="range"
+                        min="0.05"
+                        max="1"
+                        step="0.05"
+                        className="range range-xs"
+                        value={highlightSettings.opacity}
+                        onChange={event =>
+                          setHighlightSettings(current => ({
+                            ...current,
+                            opacity: clampHighlightOpacity(Number(event)),
+                          }))
+                        }
+                      />
+                      <span className="w-10 text-right text-xs">{Math.round(highlightSettings.opacity * 100)}%</span>
+                    </div>
+
+                    <Label>Brush</Label>
+                    <Select
+                      options={[
+                        { label: 'Circle', value: 'circle' },
+                        { label: 'Square', value: 'square' },
+                      ]}
+                      value={highlightSettings.brushShape}
+                      onChange={event =>
+                        setHighlightSettings(current => ({
+                          ...current,
+                          brushShape: event as HighlightBrushShape,
+                        }))
+                      }
+                    />
+                    <Label>Size</Label>
+                    <Input
+                      type="number"
+                      min={4}
+                      max={256}
+                      className="input input-xs"
+                      value={highlightSettings.brushSize}
+                      onChange={event =>
+                        setHighlightSettings(current => ({
+                          ...current,
+                          brushSize: clampHighlightBrushSize(Number(event) || current.brushSize),
+                        }))
+                      }
+                    />
                   </div>
-                  <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Brush</span>
-                  <select
-                    className="select select-xs"
-                    value={highlightSettings.brushShape}
-                    onChange={event =>
-                      setHighlightSettings(current => ({
-                        ...current,
-                        brushShape: event.target.value as HighlightBrushShape,
-                      }))
-                    }
-                  >
-                    <option value="circle">Circle</option>
-                    <option value="square">Square</option>
-                  </select>
-                  <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Size</span>
-                  <input
-                    type="number"
-                    min={4}
-                    max={256}
-                    className="input input-xs"
-                    value={highlightSettings.brushSize}
-                    onChange={event =>
-                      setHighlightSettings(current => ({
-                        ...current,
-                        brushSize: clampHighlightBrushSize(Number(event.target.value) || current.brushSize),
-                      }))
-                    }
-                  />
                 </div>
-              </div>
+              </Accordion>
             </section>
 
             <section>
-              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
-                Shape Tool
-              </div>
-              <div className="space-y-3 rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
-                <div className="grid grid-cols-[auto_1fr] items-center gap-3">
-                  <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Type</span>
-                  <select
-                    className="select select-xs"
-                    value={shapeSettings.shape}
-                    onChange={event =>
-                      setShapeSettings(current => ({
-                        ...current,
-                        shape: event.target.value as ShapeType,
-                      }))
-                    }
-                  >
-                    <option value="rectangle">Rectangle</option>
-                    <option value="circle">Circle</option>
-                    <option value="ellipse">Ellipse</option>
-                  </select>
-                  <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Fill</span>
-                  <input
-                    type="color"
-                    className="input input-xs h-9 w-full p-1"
-                    value={shapeSettings.fillColor}
-                    onChange={event =>
-                      setShapeSettings(current => ({
-                        ...current,
-                        fillColor: event.target.value,
-                      }))
-                    }
-                  />
-                  <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Border</span>
-                  <input
-                    type="color"
-                    className="input input-xs h-9 w-full p-1"
-                    value={shapeSettings.borderColor}
-                    onChange={event =>
-                      setShapeSettings(current => ({
-                        ...current,
-                        borderColor: event.target.value,
-                      }))
-                    }
-                  />
-                  <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Border Width</span>
-                  <input
-                    type="number"
-                    min={0}
-                    className="input input-xs"
-                    value={shapeSettings.borderWidth ?? 2}
-                    onChange={event =>
-                      setShapeSettings(current => ({
-                        ...current,
-                        borderWidth: Math.max(0, Math.round(Number(event.target.value) || 0)),
-                      }))
-                    }
-                  />
-                  <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Radius</span>
-                  <input
-                    type="number"
-                    min={0}
-                    className="input input-xs"
-                    value={shapeSettings.borderRadius}
-                    onChange={event =>
-                      setShapeSettings(current => ({
-                        ...current,
-                        borderRadius: Math.max(0, Math.round(Number(event.target.value) || 0)),
-                      }))
-                    }
-                  />
-                  <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Opacity</span>
-                  <div className="grid grid-cols-[1fr_auto] items-center gap-2">
-                    <input
-                      type="range"
-                      min="0.05"
-                      max="1"
-                      step="0.05"
-                      className="range range-xs"
-                      value={shapeSettings.opacity}
+              <Accordion title="Shape Tool" defaultOpen>
+                <div className="space-y-3 bg-base-200/60 text-sm text-base-content/70">
+                  <div className="grid grid-cols-[auto_1fr] items-center gap-0">
+                    <Label>Type</Label>
+                    <Select
+                      options={[
+                        { label: 'Rectangle', value: 'rectangle' },
+                        { label: 'Circle', value: 'circle' },
+                        { label: 'Ellipse', value: 'ellipse' },
+                      ]}
+                      value={shapeSettings.shape}
                       onChange={event =>
                         setShapeSettings(current => ({
                           ...current,
-                          opacity: clampShapeOpacity(Number(event.target.value)),
+                          shape: event as ShapeType,
                         }))
                       }
                     />
-                    <span className="w-10 text-right text-xs">{Math.round(shapeSettings.opacity * 100)}%</span>
+                    <Label>Fill</Label>
+                    <InputColor
+                      value={shapeSettings.fillColor}
+                      onChange={value => setShapeSettings(current => ({ ...current, fillColor: value }))}
+                    />
+                    <Label>Border</Label>
+                    <InputColor
+                      value={shapeSettings.borderColor}
+                      onChange={value => setShapeSettings(current => ({ ...current, borderColor: value }))}
+                    />
+                    <Label>Border Width</Label>
+
+                    <Input
+                      type="number"
+                      min={0}
+                      className="input input-xs"
+                      value={shapeSettings.borderWidth ?? 2}
+                      onChange={event =>
+                        setShapeSettings(current => ({
+                          ...current,
+                          borderWidth: Math.max(0, Math.round(Number(event) || 0)),
+                        }))
+                      }
+                    />
+                    <Label>Radius</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      className="input input-xs"
+                      value={shapeSettings.borderRadius}
+                      onChange={event =>
+                        setShapeSettings(current => ({
+                          ...current,
+                          borderRadius: Math.max(0, Math.round(Number(event) || 0)),
+                        }))
+                      }
+                    />
+                    <Label>Opacity</Label>
+                    <GridCols>
+                      <Input
+                        type="range"
+                        min="0.05"
+                        max="1"
+                        step="0.05"
+                        className="range range-xs"
+                        value={shapeSettings.opacity}
+                        onChange={event =>
+                          setShapeSettings(current => ({
+                            ...current,
+                            opacity: clampShapeOpacity(Number(event)),
+                          }))
+                        }
+                      />
+                      <span className="w-10 text-right text-xs">{Math.round(shapeSettings.opacity * 100)}%</span>
+                    </GridCols>
                   </div>
                 </div>
-              </div>
+              </Accordion>
             </section>
 
             <section>

@@ -1,3 +1,4 @@
+import { GridCols } from '@/lib/components/grid-cols'
 import React from 'react'
 
 export function PanelForm({
@@ -9,12 +10,6 @@ export function PanelForm({
   header: string
   children: React.ReactNode
 }) {
-  const count = React.Children.count(children)
-
-  const wrapperClass = `grid grid-cols-[${Array(count - 1)
-    .fill('1fr')
-    .join('_')}_auto] gap-2`
-
   return (
     <form
       className="space-y-2"
@@ -24,7 +19,7 @@ export function PanelForm({
       }}
     >
       <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">{header}</div>
-      <div className={wrapperClass}>{children}</div>
+      <GridCols>{children}</GridCols>
     </form>
   )
 }
