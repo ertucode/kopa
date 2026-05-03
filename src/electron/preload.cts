@@ -30,6 +30,17 @@ electron.contextBridge.exposeInMainWorld('electron', {
   setCompactWindowSize: () => ipcInvoke('setCompactWindowSize', undefined),
   restoreWindowSize: () => ipcInvoke('restoreWindowSize', undefined),
   getIsCompactWindowSize: () => ipcInvoke('getIsCompactWindowSize', undefined),
+  saveFinalImage: (request: { dataUrl: string; defaultFileName: string }) => ipcInvoke('saveFinalImage', request),
+  openEditorProject: () => ipcInvoke('openEditorProject', undefined),
+  loadEditorProject: (request: { projectPath: string }) => ipcInvoke('loadEditorProject', request),
+  saveEditorProject: (request: { projectPath: string; request: import('../common/EditorProject').EditorProjectSaveRequest }) =>
+    ipcInvoke('saveEditorProject', request),
+  saveEditorProjectAs: (request: {
+    request: import('../common/EditorProject').EditorProjectSaveRequest
+    defaultName: string
+  }) => ipcInvoke('saveEditorProjectAs', request),
+  loadEditorProjectAsset: (request: { projectPath: string; assetId: string }) => ipcInvoke('loadEditorProjectAsset', request),
+  getRecentEditorProjects: () => ipcInvoke('getRecentEditorProjects', undefined),
 } satisfies WindowElectron)
 
 function ipcInvoke<Key extends keyof EventResponseMapping>(

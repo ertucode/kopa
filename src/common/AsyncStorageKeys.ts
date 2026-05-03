@@ -10,5 +10,6 @@ export const AsyncStorageKeys = {
   batchRenameTemplates: 'batchRenameTemplates',
   batchRenameUndoHistory: 'batchRenameUndoHistory',
   customShortcuts: 'customShortcuts',
+  editorSession: 'editorSession',
 } as const
 export type AsyncStorageKey = (typeof AsyncStorageKeys)[keyof typeof AsyncStorageKeys]

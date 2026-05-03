@@ -1,6 +1,7 @@
-import { app, BrowserWindow, Menu, screen, shell, clipboard } from 'electron'
+import { app, BrowserWindow, Menu, screen, shell, clipboard, dialog } from 'electron'
 import path from 'path'
 import os from 'os'
+import fs from 'fs/promises'
 import { ipcHandle, isDev } from './util.js'
 import { getPreloadPath, getUIPath } from './pathResolver.js'
 import { xlsxWorkerPool } from './utils/xlsx-worker-pool.js'
@@ -9,6 +10,13 @@ import { initializeDatabase } from './db/index.js'
 import { serializeWindowArguments, WindowArguments } from '../common/WindowArguments.js'
 import { runCommand } from './utils/run-command.js'
 import { getServerConfig } from './server-config.js'
+import {
+  getRecentEditorProjects,
+  loadEditorProject,
+  loadEditorProjectAsset,
+  rememberRecentEditorProject,
+  saveEditorProject,
+} from './utils/editor-projects.js'
 
 // Handle folders/files opened via "open with" or as default app
 let pendingOpenPath: string | undefined
@@ -220,6 +228,107 @@ app.on('ready', () => {
 
     const windowId = window.id
     return originalWindowBounds.has(windowId)
+  })
+
+  ipcHandle('saveFinalImage', async (request, event) => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    const response = await (window
+      ? dialog.showSaveDialog(window, {
+          defaultPath: request.defaultFileName,
+          filters: [{ name: 'PNG Image', extensions: ['png'] }],
+        })
+      : dialog.showSaveDialog({
+        defaultPath: request.defaultFileName,
+        filters: [{ name: 'PNG Image', extensions: ['png'] }],
+      }))
+
+    if (response.canceled || !response.filePath) {
+      return { canceled: true }
+    }
+
+    const base64 = request.dataUrl.replace(/^data:image\/png;base64,/, '')
+    await fs.writeFile(response.filePath, Buffer.from(base64, 'base64'))
+
+    return {
+      canceled: false,
+      filePath: response.filePath,
+    }
+  })
+
+  ipcHandle('openEditorProject', async (_request, event) => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    const response = await (window
+      ? dialog.showOpenDialog(window, {
+          properties: ['openDirectory', 'createDirectory'],
+        })
+      : dialog.showOpenDialog({
+          properties: ['openDirectory', 'createDirectory'],
+        }))
+
+    if (response.canceled || !response.filePaths[0]) {
+      return { canceled: true }
+    }
+
+    const projectPath = response.filePaths[0]
+    const project = await loadEditorProject(projectPath)
+    await rememberRecentEditorProject(app.getPath('userData'), projectPath, project.name)
+
+    return {
+      canceled: false,
+      projectPath,
+      project,
+    }
+  })
+
+  ipcHandle('loadEditorProject', async request => {
+    const project = await loadEditorProject(request.projectPath)
+    await rememberRecentEditorProject(app.getPath('userData'), request.projectPath, project.name)
+    return {
+      projectPath: request.projectPath,
+      project,
+    }
+  })
+
+  ipcHandle('saveEditorProject', async request => {
+    await saveEditorProject(request.projectPath, request.request)
+    await rememberRecentEditorProject(app.getPath('userData'), request.projectPath, request.request.project.name)
+    return {
+      projectPath: request.projectPath,
+    }
+  })
+
+  ipcHandle('saveEditorProjectAs', async (request, event) => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    const response = await (window
+      ? dialog.showOpenDialog(window, {
+          properties: ['openDirectory', 'createDirectory'],
+          defaultPath: request.defaultName,
+        })
+      : dialog.showOpenDialog({
+          properties: ['openDirectory', 'createDirectory'],
+          defaultPath: request.defaultName,
+        }))
+
+    if (response.canceled || !response.filePaths[0]) {
+      return { canceled: true }
+    }
+
+    const projectPath = response.filePaths[0]
+    await saveEditorProject(projectPath, request.request)
+    await rememberRecentEditorProject(app.getPath('userData'), projectPath, request.request.project.name)
+
+    return {
+      canceled: false,
+      projectPath,
+    }
+  })
+
+  ipcHandle('loadEditorProjectAsset', async request => {
+    return await loadEditorProjectAsset(request.projectPath, request.assetId)
+  })
+
+  ipcHandle('getRecentEditorProjects', async () => {
+    return await getRecentEditorProjects(app.getPath('userData'))
   })
 
   TaskManager.addListener(e => {
