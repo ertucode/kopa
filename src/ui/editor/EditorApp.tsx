@@ -36,6 +36,9 @@ import {
   ShapeLayer,
   ShapeType,
 } from './types'
+import { FormItem } from './form/FormItem'
+import { ApplyButton } from './form/ApplyButton'
+import { PanelForm } from './form/PanelForm'
 
 const DOCUMENT_PRESETS: NewDocumentPreset[] = [
   { label: 'Avatar', width: 512, height: 512 },
@@ -264,7 +267,11 @@ function getActiveLayer(documentState: EditorDocument | null): EditorLayer | nul
   return documentState.layers.find(layer => layer.id === documentState.activeLayerId) ?? null
 }
 
-function updateLayer(documentState: EditorDocument, layerId: string, updater: (layer: EditorLayer) => EditorLayer): EditorDocument {
+function updateLayer(
+  documentState: EditorDocument,
+  layerId: string,
+  updater: (layer: EditorLayer) => EditorLayer
+): EditorDocument {
   return {
     ...documentState,
     layers: documentState.layers.map(layer => (layer.id === layerId ? updater(layer) : layer)),
@@ -368,7 +375,10 @@ function normalizeCircleRect(start: Point, current: Point): Rect {
   }
 }
 
-function normalizeHighlightPoints(points: Point[], brushSize: number): { x: number; y: number; width: number; height: number; points: Point[] } {
+function normalizeHighlightPoints(
+  points: Point[],
+  brushSize: number
+): { x: number; y: number; width: number; height: number; points: Point[] } {
   const radius = brushSize / 2
   const minX = Math.min(...points.map(point => point.x)) - radius
   const minY = Math.min(...points.map(point => point.y)) - radius
@@ -448,7 +458,9 @@ function updateShapeLayerRect(layer: ShapeLayer, rect: Rect): ShapeLayer {
 
 function updateShapeLayerStyle(
   layer: ShapeLayer,
-  changes: Partial<Pick<ShapeLayer, 'shape' | 'fillColor' | 'borderColor' | 'borderRadius' | 'opacity' | 'width' | 'height'>>
+  changes: Partial<
+    Pick<ShapeLayer, 'shape' | 'fillColor' | 'borderColor' | 'borderRadius' | 'opacity' | 'width' | 'height'>
+  >
 ): ShapeLayer {
   const nextShape = changes.shape ?? layer.shape
   let width = Math.max(1, Math.round(changes.width ?? layer.width))
@@ -713,7 +725,10 @@ function isValidVariableName(value: string): boolean {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value)
 }
 
-function resolveCustomVariables(variableDrafts: CustomVariableDraft[], baseVariables: ExpressionVariables): {
+function resolveCustomVariables(
+  variableDrafts: CustomVariableDraft[],
+  baseVariables: ExpressionVariables
+): {
   variables: ExpressionVariables
   errors: Record<string, string>
 } {
@@ -824,7 +839,9 @@ export function EditorApp() {
   const [movementStep, setMovementStep] = useState(DEFAULT_EDITOR_SESSION.movementStep)
   const [movementStepDraft, setMovementStepDraft] = useState(DEFAULT_EDITOR_SESSION.movementStep)
   const [customVariables, setCustomVariables] = useState<CustomVariableDraft[]>(DEFAULT_EDITOR_SESSION.variables)
-  const [highlightSettings, setHighlightSettings] = useState<HighlightSettingsState>(DEFAULT_EDITOR_SESSION.highlightSettings)
+  const [highlightSettings, setHighlightSettings] = useState<HighlightSettingsState>(
+    DEFAULT_EDITOR_SESSION.highlightSettings
+  )
   const [shapeSettings, setShapeSettings] = useState<ShapeSettingsState>(DEFAULT_EDITOR_SESSION.shapeSettings)
   const [layerPositionDraft, setLayerPositionDraft] = useState<LayerPositionDraftState | null>(null)
   const [layerSizeDraft, setLayerSizeDraft] = useState<LayerSizeDraftState | null>(null)
@@ -1253,12 +1270,21 @@ export function EditorApp() {
           }
           let nextWidth = Math.max(1, parseRoundedMathExpression(layerSizeDraft.width, layerVariables) ?? Number.NaN)
           let nextHeight = Math.max(1, parseRoundedMathExpression(layerSizeDraft.height, layerVariables) ?? Number.NaN)
-          if (isShapeLayer(layer) && layer.shape === 'circle' && Number.isFinite(nextWidth) && Number.isFinite(nextHeight)) {
+          if (
+            isShapeLayer(layer) &&
+            layer.shape === 'circle' &&
+            Number.isFinite(nextWidth) &&
+            Number.isFinite(nextHeight)
+          ) {
             const size = Math.max(nextWidth, nextHeight)
             nextWidth = size
             nextHeight = size
           }
-          if (Number.isFinite(nextWidth) && Number.isFinite(nextHeight) && (nextWidth !== layer.width || nextHeight !== layer.height)) {
+          if (
+            Number.isFinite(nextWidth) &&
+            Number.isFinite(nextHeight) &&
+            (nextWidth !== layer.width || nextHeight !== layer.height)
+          ) {
             layer.width = nextWidth
             layer.height = nextHeight
             didDocumentChange = true
@@ -1278,8 +1304,14 @@ export function EditorApp() {
           {
             x: parseRoundedMathExpression(selectionDraft.x, selectionVariables) ?? nextDocument.selection.x,
             y: parseRoundedMathExpression(selectionDraft.y, selectionVariables) ?? nextDocument.selection.y,
-            width: Math.max(1, parseRoundedMathExpression(selectionDraft.width, selectionVariables) ?? nextDocument.selection.width),
-            height: Math.max(1, parseRoundedMathExpression(selectionDraft.height, selectionVariables) ?? nextDocument.selection.height),
+            width: Math.max(
+              1,
+              parseRoundedMathExpression(selectionDraft.width, selectionVariables) ?? nextDocument.selection.width
+            ),
+            height: Math.max(
+              1,
+              parseRoundedMathExpression(selectionDraft.height, selectionVariables) ?? nextDocument.selection.height
+            ),
           },
           nextDocument
         )
@@ -1459,7 +1491,19 @@ export function EditorApp() {
         window.clearTimeout(autosaveTimeoutRef.current)
       }
     }
-  }, [canvasDraft, customVariables, documentState, highlightSettings, history, interaction, movementStep, projectName, projectPath, shapeSettings, tool])
+  }, [
+    canvasDraft,
+    customVariables,
+    documentState,
+    highlightSettings,
+    history,
+    interaction,
+    movementStep,
+    projectName,
+    projectPath,
+    shapeSettings,
+    tool,
+  ])
 
   const normalizedMovementStep = useMemo(
     () => Math.max(1, parseRoundedMathExpression(movementStep, resolvedExpressionVariables) ?? 1),
@@ -1473,7 +1517,14 @@ export function EditorApp() {
   const viewportScale = useMemo(() => {
     if (!documentState) return 1
     if (!viewportBounds.width || !viewportBounds.height) return 1
-    return Math.max(0.05, Math.min((viewportBounds.width - 48) / documentState.width, (viewportBounds.height - 48) / documentState.height, 1))
+    return Math.max(
+      0.05,
+      Math.min(
+        (viewportBounds.width - 48) / documentState.width,
+        (viewportBounds.height - 48) / documentState.height,
+        1
+      )
+    )
   }, [documentState, viewportBounds.height, viewportBounds.width])
 
   useEffect(() => {
@@ -1716,7 +1767,10 @@ export function EditorApp() {
       setSelectionPreview(null)
       return {
         past: currentHistory.past.slice(0, -1),
-        future: [{ label: previousEntry.label, document: cloneDocument(currentDocumentState) }, ...currentHistory.future],
+        future: [
+          { label: previousEntry.label, document: cloneDocument(currentDocumentState) },
+          ...currentHistory.future,
+        ],
       }
     })
   }
@@ -1960,7 +2014,11 @@ export function EditorApp() {
         if (!isHighlightLayer(layer)) return layer
         const absolutePoints = getHighlightAbsolutePoints(layer)
         const lastPoint = absolutePoints[absolutePoints.length - 1]
-        if (lastPoint && Math.round(lastPoint.x) === Math.round(pointer.x) && Math.round(lastPoint.y) === Math.round(pointer.y)) {
+        if (
+          lastPoint &&
+          Math.round(lastPoint.x) === Math.round(pointer.x) &&
+          Math.round(lastPoint.y) === Math.round(pointer.y)
+        ) {
           return layer
         }
         return updateHighlightLayerPoints(layer, [...absolutePoints, pointer])
@@ -2137,7 +2195,9 @@ export function EditorApp() {
     if (!interaction || !documentState) return
     if (interaction.type === 'moving-layer') {
       const layer = documentState.layers.find(item => item.id === interaction.layerId)
-      finalizeInteraction(layer?.type === 'highlight' ? 'Move highlight' : layer?.type === 'shape' ? 'Move shape' : 'Move image')
+      finalizeInteraction(
+        layer?.type === 'highlight' ? 'Move highlight' : layer?.type === 'shape' ? 'Move shape' : 'Move image'
+      )
       return
     }
     if (interaction.type === 'resizing-layer') {
@@ -2294,9 +2354,20 @@ export function EditorApp() {
     if (!documentState || !activeLayer || !layerSizeDraft || layerSizeDraft.layerId !== activeLayer.id) return
     if (isHighlightLayer(activeLayer)) return
 
-    let width = Math.max(1, parseRoundedMathExpression(layerSizeDraft.width, activeLayerExpressionVariables) ?? Number.NaN)
-    let height = Math.max(1, parseRoundedMathExpression(layerSizeDraft.height, activeLayerExpressionVariables) ?? Number.NaN)
-    if (isShapeLayer(activeLayer) && Number.isFinite(width) && Number.isFinite(height) && activeLayer.shape === 'circle') {
+    let width = Math.max(
+      1,
+      parseRoundedMathExpression(layerSizeDraft.width, activeLayerExpressionVariables) ?? Number.NaN
+    )
+    let height = Math.max(
+      1,
+      parseRoundedMathExpression(layerSizeDraft.height, activeLayerExpressionVariables) ?? Number.NaN
+    )
+    if (
+      isShapeLayer(activeLayer) &&
+      Number.isFinite(width) &&
+      Number.isFinite(height) &&
+      activeLayer.shape === 'circle'
+    ) {
       const size = Math.max(width, height)
       width = size
       height = size
@@ -2316,7 +2387,9 @@ export function EditorApp() {
     pushHistory('Set exact size', documentState, nextDocument)
   }
 
-  function applyActiveHighlightStyle(changes: Partial<Pick<HighlightLayer, 'color' | 'opacity' | 'brushShape' | 'brushSize'>>) {
+  function applyActiveHighlightStyle(
+    changes: Partial<Pick<HighlightLayer, 'color' | 'opacity' | 'brushShape' | 'brushSize'>>
+  ) {
     if (!documentState || !activeHighlight) return
     const nextDocument = updateLayer(documentState, activeHighlight.id, layer => {
       if (!isHighlightLayer(layer)) return layer
@@ -2327,7 +2400,9 @@ export function EditorApp() {
   }
 
   function applyActiveShapeStyle(
-    changes: Partial<Pick<ShapeLayer, 'shape' | 'fillColor' | 'borderColor' | 'borderRadius' | 'opacity' | 'width' | 'height'>>
+    changes: Partial<
+      Pick<ShapeLayer, 'shape' | 'fillColor' | 'borderColor' | 'borderRadius' | 'opacity' | 'width' | 'height'>
+    >
   ) {
     if (!documentState || !activeShape) return
     const nextDocument = updateLayer(documentState, activeShape.id, layer => {
@@ -2367,8 +2442,14 @@ export function EditorApp() {
   function applySelectionSize() {
     if (!documentState || !documentState.selection || !selectionDraft) return
 
-    const width = Math.max(1, parseRoundedMathExpression(selectionDraft.width, selectionExpressionVariables) ?? Number.NaN)
-    const height = Math.max(1, parseRoundedMathExpression(selectionDraft.height, selectionExpressionVariables) ?? Number.NaN)
+    const width = Math.max(
+      1,
+      parseRoundedMathExpression(selectionDraft.width, selectionExpressionVariables) ?? Number.NaN
+    )
+    const height = Math.max(
+      1,
+      parseRoundedMathExpression(selectionDraft.height, selectionExpressionVariables) ?? Number.NaN
+    )
     if (!Number.isFinite(width) || !Number.isFinite(height)) {
       setErrorMessage('Selection width and height must be valid numbers or simple math expressions')
       return
@@ -2485,31 +2566,44 @@ export function EditorApp() {
     !!activeLayer &&
     !!layerPositionDraft &&
     layerPositionDraft.layerId === activeLayer.id &&
-    snapToStep(parseRoundedMathExpression(layerPositionDraft.x, activeLayerExpressionVariables) ?? Number.NaN, normalizedMovementStep) === Math.round(activeLayer.x) &&
-    snapToStep(parseRoundedMathExpression(layerPositionDraft.y, activeLayerExpressionVariables) ?? Number.NaN, normalizedMovementStep) === Math.round(activeLayer.y)
+    snapToStep(
+      parseRoundedMathExpression(layerPositionDraft.x, activeLayerExpressionVariables) ?? Number.NaN,
+      normalizedMovementStep
+    ) === Math.round(activeLayer.x) &&
+    snapToStep(
+      parseRoundedMathExpression(layerPositionDraft.y, activeLayerExpressionVariables) ?? Number.NaN,
+      normalizedMovementStep
+    ) === Math.round(activeLayer.y)
 
   const isInspectorSizeUnchanged =
     !!activeLayer &&
     !!layerSizeDraft &&
     layerSizeDraft.layerId === activeLayer.id &&
-    parseRoundedMathExpression(layerSizeDraft.width, activeLayerExpressionVariables) === Math.round(activeLayer.width) &&
+    parseRoundedMathExpression(layerSizeDraft.width, activeLayerExpressionVariables) ===
+      Math.round(activeLayer.width) &&
     parseRoundedMathExpression(layerSizeDraft.height, activeLayerExpressionVariables) === Math.round(activeLayer.height)
 
   const isSelectionPositionUnchanged =
     !!documentState?.selection &&
     !!selectionDraft &&
-    parseRoundedMathExpression(selectionDraft.x, selectionExpressionVariables) === Math.round(documentState.selection.x) &&
+    parseRoundedMathExpression(selectionDraft.x, selectionExpressionVariables) ===
+      Math.round(documentState.selection.x) &&
     parseRoundedMathExpression(selectionDraft.y, selectionExpressionVariables) === Math.round(documentState.selection.y)
 
   const isSelectionSizeUnchanged =
     !!documentState?.selection &&
     !!selectionDraft &&
-    parseRoundedMathExpression(selectionDraft.width, selectionExpressionVariables) === Math.round(documentState.selection.width) &&
-    parseRoundedMathExpression(selectionDraft.height, selectionExpressionVariables) === Math.round(documentState.selection.height)
+    parseRoundedMathExpression(selectionDraft.width, selectionExpressionVariables) ===
+      Math.round(documentState.selection.width) &&
+    parseRoundedMathExpression(selectionDraft.height, selectionExpressionVariables) ===
+      Math.round(documentState.selection.height)
 
   function applyCanvasDraft() {
     const width = Math.max(1, parseRoundedMathExpression(canvasDraft.width, resolvedExpressionVariables) ?? Number.NaN)
-    const height = Math.max(1, parseRoundedMathExpression(canvasDraft.height, resolvedExpressionVariables) ?? Number.NaN)
+    const height = Math.max(
+      1,
+      parseRoundedMathExpression(canvasDraft.height, resolvedExpressionVariables) ?? Number.NaN
+    )
     if (!Number.isFinite(width) || !Number.isFinite(height)) {
       setErrorMessage('Canvas size must be valid numbers or simple math expressions')
       return
@@ -2520,7 +2614,8 @@ export function EditorApp() {
   const layerMenu = useContextMenu<CanvasContextMenuItem>()
   const selectionContextLayerId = layerMenu.item?.type === 'selection' ? layerMenu.item.layerId : null
   const contextLayerId = layerMenu.item?.type === 'layer' ? layerMenu.item.layerId : selectionContextLayerId
-  const contextLayer = contextLayerId && documentState ? documentState.layers.find(layer => layer.id === contextLayerId) ?? null : null
+  const contextLayer =
+    contextLayerId && documentState ? (documentState.layers.find(layer => layer.id === contextLayerId) ?? null) : null
   const previewLayer =
     imagePreviewDialog && documentState
       ? (() => {
@@ -2556,16 +2651,16 @@ export function EditorApp() {
           contextLayerId ? { isSeparator: true as const } : null,
           contextLayerId
             ? {
-            view: 'Set Position...',
-            onClick: () => openPositionDialog(contextLayerId),
+                view: 'Set Position...',
+                onClick: () => openPositionDialog(contextLayerId),
               }
             : null,
           contextLayer && !isHighlightLayer(contextLayer)
             ? {
                 view: 'Set Size...',
                 onClick: () => openSizeDialog(contextLayer.id),
-                }
-             : null,
+              }
+            : null,
         ]
       : layerMenu.item?.type === 'layer' && contextLayer
         ? [
@@ -2627,10 +2722,20 @@ export function EditorApp() {
             <span className="text-xs font-semibold">S</span>
           </button>
           <div className="mt-6 flex flex-col gap-2">
-            <button className="btn btn-square btn-sm btn-ghost" onClick={handleUndo} disabled={!history.past.length} title="Undo">
+            <button
+              className="btn btn-square btn-sm btn-ghost"
+              onClick={handleUndo}
+              disabled={!history.past.length}
+              title="Undo"
+            >
               <Undo2Icon className="size-4" />
             </button>
-            <button className="btn btn-square btn-sm btn-ghost" onClick={handleRedo} disabled={!history.future.length} title="Redo">
+            <button
+              className="btn btn-square btn-sm btn-ghost"
+              onClick={handleRedo}
+              disabled={!history.future.length}
+              title="Redo"
+            >
               <Redo2Icon className="size-4" />
             </button>
           </div>
@@ -2647,10 +2752,20 @@ export function EditorApp() {
             <Button className="btn-sm btn-soft" onClick={() => void handleSaveProject()} disabled={isProjectSaving}>
               {projectPath ? 'Save Project' : 'Save Project As'}
             </Button>
-            <Button icon={ImagePlusIcon} className="btn-sm" onClick={() => inputRef.current?.click()} disabled={!documentState}>
+            <Button
+              icon={ImagePlusIcon}
+              className="btn-sm"
+              onClick={() => inputRef.current?.click()}
+              disabled={!documentState}
+            >
               Place image
             </Button>
-            <Button icon={SaveIcon} className="btn-sm" onClick={() => void saveFinalImage()} disabled={!documentState || isSaving}>
+            <Button
+              icon={SaveIcon}
+              className="btn-sm"
+              onClick={() => void saveFinalImage()}
+              disabled={!documentState || isSaving}
+            >
               Save PNG
             </Button>
             <div className="text-sm text-base-content/70">
@@ -2698,7 +2813,8 @@ export function EditorApp() {
                   <div className="mb-6">
                     <div className="text-3xl font-semibold">Start a project</div>
                     <p className="mt-2 max-w-xl text-sm text-base-content/70">
-                      Projects now live on disk with reusable history and image assets, so you can return to previous work and switch between saved canvases.
+                      Projects now live on disk with reusable history and image assets, so you can return to previous
+                      work and switch between saved canvases.
                     </p>
                   </div>
                   {recentProjects.length > 0 && (
@@ -2715,7 +2831,9 @@ export function EditorApp() {
                               <div className="truncate font-medium">{project.name}</div>
                               <div className="truncate text-xs text-base-content/55">{project.projectPath}</div>
                             </div>
-                            <div className="ml-3 shrink-0 text-[11px] text-base-content/45">{new Date(project.updatedAt).toLocaleDateString()}</div>
+                            <div className="ml-3 shrink-0 text-[11px] text-base-content/45">
+                              {new Date(project.updatedAt).toLocaleDateString()}
+                            </div>
                           </button>
                         ))}
                       </div>
@@ -2764,7 +2882,10 @@ export function EditorApp() {
                     if (!documentState) return
                     const canvas = overlayCanvasRef.current
                     if (!canvas) return
-                    const pointer = getPointerOnCanvas(event as unknown as React.PointerEvent<HTMLCanvasElement>, canvas)
+                    const pointer = getPointerOnCanvas(
+                      event as unknown as React.PointerEvent<HTMLCanvasElement>,
+                      canvas
+                    )
                     const hit = hitLayer(documentState.layers, pointer)
                     const isSelectionHit = !!documentState.selection && pointInRect(pointer, documentState.selection)
                     if (isSelectionHit) {
@@ -2802,7 +2923,9 @@ export function EditorApp() {
 
             <aside className="flex min-h-0 w-80 flex-col gap-5 overflow-y-auto border-l border-base-content/10 px-4 py-4">
               <section>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">Project</div>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
+                  Project
+                </div>
                 <div className="space-y-3 rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
                   <form
                     className="space-y-2"
@@ -2822,19 +2945,27 @@ export function EditorApp() {
                         <button
                           type="submit"
                           className="btn btn-sm btn-info"
-                          disabled={projectNameDraft.value.trim().length === 0 || projectNameDraft.value.trim() === projectName}
+                          disabled={
+                            projectNameDraft.value.trim().length === 0 || projectNameDraft.value.trim() === projectName
+                          }
                         >
                           Rename
                         </button>
                       </div>
                     </label>
-                    <div className="break-all text-xs text-base-content/55">{projectPath ?? 'Unsaved project folder'}</div>
+                    <div className="break-all text-xs text-base-content/55">
+                      {projectPath ?? 'Unsaved project folder'}
+                    </div>
                   </form>
                   <div className="text-xs text-base-content/55">
                     {hasUnsavedChanges ? 'Changes pending save.' : 'Project is saved.'}
                   </div>
                   <div className="flex gap-2">
-                    <Button className="btn-sm flex-1" onClick={() => void handleSaveProject()} disabled={isProjectSaving}>
+                    <Button
+                      className="btn-sm flex-1"
+                      onClick={() => void handleSaveProject()}
+                      disabled={isProjectSaving}
+                    >
                       Save
                     </Button>
                     <Button className="btn-sm btn-soft flex-1" onClick={() => void handleOpenProject()}>
@@ -2843,7 +2974,9 @@ export function EditorApp() {
                   </div>
                   {recentProjects.length > 0 && (
                     <div className="space-y-2">
-                      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Switch project</div>
+                      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">
+                        Switch project
+                      </div>
                       <div className="space-y-2">
                         {recentProjects.map(project => (
                           <button
@@ -2867,141 +3000,350 @@ export function EditorApp() {
               </section>
 
               <section>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">Document</div>
                 {documentState ? (
-                    <div className="space-y-3 rounded-2xl border border-base-content/10 bg-base-200/60 p-4">
-                      <form
-                        className="space-y-2"
-                        onSubmit={event => {
-                          event.preventDefault()
-                          applyCanvasDraft()
-                        }}
-                      >
-                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Canvas size</div>
-                        <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
-                          <label className="form-control gap-1">
-                            <span className="label text-[11px]">W</span>
-                            <input
-                              className="input input-xs"
-                              value={canvasDraft.width}
-                              onChange={event => setCanvasDraft(current => ({ ...current, width: event.target.value }))}
-                            />
-                          </label>
-                          <label className="form-control gap-1">
-                            <span className="label text-[11px]">H</span>
-                            <input
-                              className="input input-xs"
-                              value={canvasDraft.height}
-                              onChange={event => setCanvasDraft(current => ({ ...current, height: event.target.value }))}
-                            />
-                          </label>
-                          <div className="flex items-end">
-                            <button
-                               type="submit"
-                               className="btn btn-xs btn-info w-full"
-                               disabled={
-                                 parseRoundedMathExpression(canvasDraft.width, resolvedExpressionVariables) === documentState.width &&
-                                 parseRoundedMathExpression(canvasDraft.height, resolvedExpressionVariables) === documentState.height
-                               }
-                             >
-                              Apply
-                            </button>
-                          </div>
-                        </div>
-                      </form>
-                      <form
-                        className="space-y-2"
-                        onSubmit={event => {
-                          event.preventDefault()
-                          applyPasteSize(pasteSizeDraft.width, pasteSizeDraft.height)
-                        }}
-                      >
-                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Paste size</div>
-                        <div className="text-xs text-base-content/55">Leave blank to use the image's actual size.</div>
-                        <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
-                          <label className="form-control gap-1">
-                            <span className="label text-[11px]">W</span>
-                            <input
-                              className="input input-xs"
-                              value={pasteSizeDraft.width}
-                              placeholder="auto"
-                              onChange={event => setPasteSizeDraft(current => ({ ...current, width: event.target.value }))}
-                            />
-                          </label>
-                          <label className="form-control gap-1">
-                            <span className="label text-[11px]">H</span>
-                            <input
-                              className="input input-xs"
-                              value={pasteSizeDraft.height}
-                              placeholder="auto"
-                              onChange={event => setPasteSizeDraft(current => ({ ...current, height: event.target.value }))}
-                            />
-                          </label>
-                          <div className="flex items-end">
-                            <button
-                               type="submit"
-                               className="btn btn-xs btn-info w-full"
-                               disabled={
-                                 (pasteSizeDraft.width.trim().length
-                                   ? Math.max(1, parseRoundedMathExpression(pasteSizeDraft.width, resolvedExpressionVariables) ?? Number.NaN)
-                                   : null) ===
-                                   documentState.pasteWidth &&
-                                 (pasteSizeDraft.height.trim().length
-                                   ? Math.max(1, parseRoundedMathExpression(pasteSizeDraft.height, resolvedExpressionVariables) ?? Number.NaN)
-                                   : null) ===
-                                   documentState.pasteHeight
-                               }
-                             >
-                              Apply
-                            </button>
-                          </div>
-                        </div>
-                      </form>
-                      <form
-                        className="space-y-2"
-                        onSubmit={event => {
-                          event.preventDefault()
-                          applyMovementStep()
-                        }}
-                      >
-                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Movement step</div>
-                        <div className="grid grid-cols-[1fr_auto] gap-2">
-                          <label className="form-control gap-1">
-                            <span className="label text-[11px]">PX</span>
-                            <input
-                              className="input input-xs"
-                              value={movementStepDraft}
-                              onChange={event => setMovementStepDraft(event.target.value)}
-                            />
-                          </label>
-                          <div className="flex items-end">
-                            <button
-                              type="submit"
-                              className="btn btn-xs btn-info w-full"
-                              disabled={movementStep === String(normalizedMovementStepDraft)}
-                            >
-                              Apply
-                            </button>
-                          </div>
-                        </div>
-                      </form>
-                      <div className="text-xs text-base-content/55">
-                        Image placement snaps to multiples of {normalizedMovementStep} px.
-                      </div>
-                      <div className="text-xs text-base-content/55">
-                        Numeric inputs support `+`, `-`, `*`, `/`, `%` and variables like `canvasWidth` and `canvasHeight`.
-                      </div>
-                    </div>
+                  <div className="space-y-3 rounded-2xl border border-base-content/10 bg-base-200/60 p-4">
+                    <PanelForm onSubmit={applyCanvasDraft} header="Canvas size">
+                      <FormItem
+                        label="W"
+                        value={canvasDraft.width}
+                        onChange={v => setCanvasDraft(current => ({ ...current, width: v }))}
+                      />
+                      <FormItem
+                        label="H"
+                        value={canvasDraft.height}
+                        onChange={v => setCanvasDraft(current => ({ ...current, height: v }))}
+                      />
+                      <ApplyButton
+                        disabled={
+                          parseRoundedMathExpression(canvasDraft.width, resolvedExpressionVariables) ===
+                            documentState.width &&
+                          parseRoundedMathExpression(canvasDraft.height, resolvedExpressionVariables) ===
+                            documentState.height
+                        }
+                      />
+                    </PanelForm>
+                    <PanelForm
+                      onSubmit={() => applyPasteSize(pasteSizeDraft.width, pasteSizeDraft.height)}
+                      header="Paste size"
+                    >
+                      <FormItem
+                        label="W"
+                        value={pasteSizeDraft.width}
+                        onChange={v => setPasteSizeDraft(current => ({ ...current, width: v }))}
+                      />
+                      <FormItem
+                        label="H"
+                        value={pasteSizeDraft.height}
+                        onChange={v => setPasteSizeDraft(current => ({ ...current, height: v }))}
+                      />
+                      <ApplyButton
+                        disabled={
+                          (pasteSizeDraft.width.trim().length
+                            ? Math.max(
+                                1,
+                                parseRoundedMathExpression(pasteSizeDraft.width, resolvedExpressionVariables) ??
+                                  Number.NaN
+                              )
+                            : null) === documentState.pasteWidth &&
+                          (pasteSizeDraft.height.trim().length
+                            ? Math.max(
+                                1,
+                                parseRoundedMathExpression(pasteSizeDraft.height, resolvedExpressionVariables) ??
+                                  Number.NaN
+                              )
+                            : null) === documentState.pasteHeight
+                        }
+                      />
+                    </PanelForm>
+                    <PanelForm onSubmit={() => applyMovementStep()} header="Movement step">
+                      <FormItem label="PX" value={movementStepDraft} onChange={v => setMovementStepDraft(v)} />
+                      <ApplyButton disabled={movementStep === String(normalizedMovementStepDraft)} />
+                    </PanelForm>
+                  </div>
                 ) : (
                   <p className="text-sm text-base-content/60">Pick a preset or enter a custom canvas size to begin.</p>
                 )}
               </section>
 
               <section>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">Variables</div>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
+                  Active Object
+                </div>
+                <div className="rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
+                  {activeLayer ? (
+                    <div className="space-y-3">
+                      <div className="text-xs text-base-content/55">
+                        Use math and variables like `imageX`, `imageY`, `imageWidth`, `imageHeight`, `canvasWidth`, and
+                        `canvasHeight`.
+                      </div>
+                      <div className="font-medium text-base-content">{activeLayer.name}</div>
+                      <div className="text-xs uppercase tracking-[0.14em] text-base-content/50">
+                        {activeLayer.type === 'highlight'
+                          ? 'Highlight'
+                          : activeLayer.type === 'shape'
+                            ? 'Shape'
+                            : 'Image'}
+                      </div>
+                      <div>
+                        Position: {formatPixels(activeLayer.x)}, {formatPixels(activeLayer.y)}
+                      </div>
+                      <div>
+                        Display size: {formatPixels(activeLayer.width)} x {formatPixels(activeLayer.height)}
+                      </div>
+                      {isImageLayer(activeLayer) && (
+                        <div>
+                          Raster size: {formatPixels(activeLayer.pixelWidth)} x {formatPixels(activeLayer.pixelHeight)}
+                        </div>
+                      )}
+                      {layerPositionDraft && layerPositionDraft.layerId === activeLayer.id && (
+                        <>
+                          <form
+                            className="space-y-2"
+                            onSubmit={event => {
+                              event.preventDefault()
+                              applyInspectorPosition()
+                            }}
+                          >
+                            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">
+                              Placement
+                            </div>
+                            <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                              <label className="form-control gap-1">
+                                <span className="label text-[11px]">X</span>
+                                <input
+                                  className="input input-xs"
+                                  value={layerPositionDraft.x}
+                                  onChange={event =>
+                                    setLayerPositionDraft(current =>
+                                      current ? { ...current, x: event.target.value } : current
+                                    )
+                                  }
+                                />
+                              </label>
+                              <label className="form-control gap-1">
+                                <span className="label text-[11px]">Y</span>
+                                <input
+                                  className="input input-xs"
+                                  value={layerPositionDraft.y}
+                                  onChange={event =>
+                                    setLayerPositionDraft(current =>
+                                      current ? { ...current, y: event.target.value } : current
+                                    )
+                                  }
+                                />
+                              </label>
+                              <div className="flex items-end">
+                                <button
+                                  type="submit"
+                                  className="btn btn-xs btn-info w-full"
+                                  disabled={isInspectorPositionUnchanged}
+                                >
+                                  Apply
+                                </button>
+                              </div>
+                            </div>
+                          </form>
+                        </>
+                      )}
+                      {!isHighlightLayer(activeLayer) &&
+                        layerSizeDraft &&
+                        layerSizeDraft.layerId === activeLayer.id && (
+                          <form
+                            className="space-y-2"
+                            onSubmit={event => {
+                              event.preventDefault()
+                              applyInspectorSize()
+                            }}
+                          >
+                            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">
+                              Exact size
+                            </div>
+                            <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                              <label className="form-control gap-1">
+                                <span className="label text-[11px]">W</span>
+                                <input
+                                  className="input input-xs"
+                                  value={layerSizeDraft.width}
+                                  onChange={event =>
+                                    setLayerSizeDraft(current =>
+                                      current ? { ...current, width: event.target.value } : current
+                                    )
+                                  }
+                                />
+                              </label>
+                              <label className="form-control gap-1">
+                                <span className="label text-[11px]">H</span>
+                                <input
+                                  className="input input-xs"
+                                  value={layerSizeDraft.height}
+                                  onChange={event =>
+                                    setLayerSizeDraft(current =>
+                                      current ? { ...current, height: event.target.value } : current
+                                    )
+                                  }
+                                />
+                              </label>
+                              <div className="flex items-end">
+                                <button
+                                  type="submit"
+                                  className="btn btn-xs btn-info w-full"
+                                  disabled={isInspectorSizeUnchanged}
+                                >
+                                  Apply
+                                </button>
+                              </div>
+                            </div>
+                          </form>
+                        )}
+                      {activeHighlight && (
+                        <div className="space-y-3 rounded-xl border border-base-content/10 bg-base-100/40 p-3">
+                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">
+                            Highlight style
+                          </div>
+                          <div className="grid grid-cols-[auto_1fr] items-center gap-3">
+                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Color</span>
+                            <input
+                              type="color"
+                              className="input input-xs h-9 w-full p-1"
+                              value={activeHighlight.color}
+                              onChange={event => applyActiveHighlightStyle({ color: event.target.value })}
+                            />
+                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">
+                              Opacity
+                            </span>
+                            <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                              <input
+                                type="range"
+                                min="0.05"
+                                max="1"
+                                step="0.05"
+                                className="range range-xs"
+                                value={activeHighlight.opacity}
+                                onChange={event =>
+                                  applyActiveHighlightStyle({
+                                    opacity: clampHighlightOpacity(Number(event.target.value)),
+                                  })
+                                }
+                              />
+                              <span className="w-10 text-right text-xs">
+                                {Math.round(activeHighlight.opacity * 100)}%
+                              </span>
+                            </div>
+                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Brush</span>
+                            <select
+                              className="select select-xs"
+                              value={activeHighlight.brushShape}
+                              onChange={event =>
+                                applyActiveHighlightStyle({
+                                  brushShape: event.target.value as HighlightBrushShape,
+                                })
+                              }
+                            >
+                              <option value="circle">Circle</option>
+                              <option value="square">Square</option>
+                            </select>
+                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Size</span>
+                            <input
+                              type="number"
+                              min={4}
+                              max={256}
+                              className="input input-xs"
+                              value={activeHighlight.brushSize}
+                              onChange={event =>
+                                applyActiveHighlightStyle({
+                                  brushSize: clampHighlightBrushSize(
+                                    Number(event.target.value) || activeHighlight.brushSize
+                                  ),
+                                })
+                              }
+                            />
+                          </div>
+                        </div>
+                      )}
+                      {activeShape && (
+                        <div className="space-y-3 rounded-xl border border-base-content/10 bg-base-100/40 p-3">
+                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">
+                            Shape style
+                          </div>
+                          <div className="grid grid-cols-[auto_1fr] items-center gap-3">
+                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Type</span>
+                            <select
+                              className="select select-xs"
+                              value={activeShape.shape}
+                              onChange={event =>
+                                applyActiveShapeStyle({
+                                  shape: event.target.value as ShapeType,
+                                })
+                              }
+                            >
+                              <option value="rectangle">Rectangle</option>
+                              <option value="circle">Circle</option>
+                              <option value="ellipse">Ellipse</option>
+                            </select>
+                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Fill</span>
+                            <input
+                              type="color"
+                              className="input input-xs h-9 w-full p-1"
+                              value={activeShape.fillColor}
+                              onChange={event => applyActiveShapeStyle({ fillColor: event.target.value })}
+                            />
+                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Border</span>
+                            <input
+                              type="color"
+                              className="input input-xs h-9 w-full p-1"
+                              value={activeShape.borderColor}
+                              onChange={event => applyActiveShapeStyle({ borderColor: event.target.value })}
+                            />
+                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Radius</span>
+                            <input
+                              type="number"
+                              min={0}
+                              className="input input-xs"
+                              value={activeShape.borderRadius}
+                              disabled={activeShape.shape !== 'rectangle'}
+                              onChange={event =>
+                                applyActiveShapeStyle({
+                                  borderRadius: Math.max(0, Math.round(Number(event.target.value) || 0)),
+                                })
+                              }
+                            />
+                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">
+                              Opacity
+                            </span>
+                            <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                              <input
+                                type="range"
+                                min="0.05"
+                                max="1"
+                                step="0.05"
+                                className="range range-xs"
+                                value={activeShape.opacity}
+                                onChange={event =>
+                                  applyActiveShapeStyle({
+                                    opacity: clampShapeOpacity(Number(event.target.value)),
+                                  })
+                                }
+                              />
+                              <span className="w-10 text-right text-xs">{Math.round(activeShape.opacity * 100)}%</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div>Select an object to inspect or move it.</div>
+                  )}
+                </div>
+              </section>
+
+              <section>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
+                  Variables
+                </div>
                 <div className="space-y-3 rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
                   <div className="text-xs text-base-content/55">
-                    Define project variables once, then reuse them in any numeric input. Variables can reference `canvasWidth`, `canvasHeight`, and other custom variables.
+                    Define project variables once, then reuse them in any numeric input. Variables can reference
+                    `canvasWidth`, `canvasHeight`, and other custom variables.
                   </div>
                   <div className="grid grid-cols-[1fr_1fr] gap-2 text-[11px] text-base-content/50">
                     <div>`canvasWidth`: {formatPixels(documentState?.width ?? 0)}</div>
@@ -3014,7 +3356,10 @@ export function EditorApp() {
                       const error = resolvedCustomVariables.errors[variable.id]
 
                       return (
-                        <div key={variable.id} className="space-y-2 rounded-xl border border-base-content/10 bg-base-100/40 p-3">
+                        <div
+                          key={variable.id}
+                          className="space-y-2 rounded-xl border border-base-content/10 bg-base-100/40 p-3"
+                        >
                           <div className="grid grid-cols-[1fr_auto] gap-2">
                             <label className="form-control gap-1">
                               <span className="label text-[11px]">Name</span>
@@ -3071,7 +3416,9 @@ export function EditorApp() {
               </section>
 
               <section>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">Highlight Tool</div>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
+                  Highlight Tool
+                </div>
                 <div className="space-y-3 rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
                   <div className="text-xs text-base-content/55">
                     Drag on the canvas in highlight mode to create a movable standalone highlight object.
@@ -3140,7 +3487,9 @@ export function EditorApp() {
               </section>
 
               <section>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">Shape Tool</div>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
+                  Shape Tool
+                </div>
                 <div className="space-y-3 rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
                   <div className="text-xs text-base-content/55">
                     Drag on the canvas in shape mode to create a rectangle, circle, or ellipse object.
@@ -3221,24 +3570,36 @@ export function EditorApp() {
               </section>
 
               <section>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">Selection</div>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
+                  Selection
+                </div>
                 <div className="rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
                   {documentState?.selection && selectionDraft ? (
                     <div className="space-y-3">
                       <div className="text-xs text-base-content/55">
-                        Use math and variables like `selectionX`, `selectionY`, `selectionWidth`, `selectionHeight`, `canvasWidth`, and `canvasHeight`.
+                        Use math and variables like `selectionX`, `selectionY`, `selectionWidth`, `selectionHeight`,
+                        `canvasWidth`, and `canvasHeight`.
                       </div>
                       <div className="flex gap-2">
                         <Button className="btn-sm btn-soft flex-1" onClick={() => void copySelectionToClipboard()}>
                           Copy
                         </Button>
-                        <Button className="btn-sm btn-soft flex-1" onClick={() => void saveSelectionImage()} disabled={isSaving}>
+                        <Button
+                          className="btn-sm btn-soft flex-1"
+                          onClick={() => void saveSelectionImage()}
+                          disabled={isSaving}
+                        >
                           Save PNG
                         </Button>
                       </div>
                       <div className="space-y-1">
-                        <div>Origin: {formatPixels(documentState.selection.x)}, {formatPixels(documentState.selection.y)}</div>
-                        <div>Size: {formatPixels(documentState.selection.width)} x {formatPixels(documentState.selection.height)}</div>
+                        <div>
+                          Origin: {formatPixels(documentState.selection.x)}, {formatPixels(documentState.selection.y)}
+                        </div>
+                        <div>
+                          Size: {formatPixels(documentState.selection.width)} x{' '}
+                          {formatPixels(documentState.selection.height)}
+                        </div>
                       </div>
 
                       <form
@@ -3248,7 +3609,9 @@ export function EditorApp() {
                           applySelectionPosition()
                         }}
                       >
-                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Placement</div>
+                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">
+                          Placement
+                        </div>
                         <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
                           <label className="form-control gap-1">
                             <span className="label text-[11px]">X</span>
@@ -3256,7 +3619,9 @@ export function EditorApp() {
                               className="input input-xs"
                               value={selectionDraft.x}
                               onChange={event =>
-                                setSelectionDraft(current => (current ? { ...current, x: event.target.value } : current))
+                                setSelectionDraft(current =>
+                                  current ? { ...current, x: event.target.value } : current
+                                )
                               }
                             />
                           </label>
@@ -3266,12 +3631,18 @@ export function EditorApp() {
                               className="input input-xs"
                               value={selectionDraft.y}
                               onChange={event =>
-                                setSelectionDraft(current => (current ? { ...current, y: event.target.value } : current))
+                                setSelectionDraft(current =>
+                                  current ? { ...current, y: event.target.value } : current
+                                )
                               }
                             />
                           </label>
                           <div className="flex items-end">
-                            <button type="submit" className="btn btn-xs btn-info w-full" disabled={isSelectionPositionUnchanged}>
+                            <button
+                              type="submit"
+                              className="btn btn-xs btn-info w-full"
+                              disabled={isSelectionPositionUnchanged}
+                            >
                               Apply
                             </button>
                           </div>
@@ -3285,7 +3656,9 @@ export function EditorApp() {
                           applySelectionSize()
                         }}
                       >
-                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Exact size</div>
+                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">
+                          Exact size
+                        </div>
                         <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
                           <label className="form-control gap-1">
                             <span className="label text-[11px]">W</span>
@@ -3293,7 +3666,9 @@ export function EditorApp() {
                               className="input input-xs"
                               value={selectionDraft.width}
                               onChange={event =>
-                                setSelectionDraft(current => (current ? { ...current, width: event.target.value } : current))
+                                setSelectionDraft(current =>
+                                  current ? { ...current, width: event.target.value } : current
+                                )
                               }
                             />
                           </label>
@@ -3303,12 +3678,18 @@ export function EditorApp() {
                               className="input input-xs"
                               value={selectionDraft.height}
                               onChange={event =>
-                                setSelectionDraft(current => (current ? { ...current, height: event.target.value } : current))
+                                setSelectionDraft(current =>
+                                  current ? { ...current, height: event.target.value } : current
+                                )
                               }
                             />
                           </label>
                           <div className="flex items-end">
-                            <button type="submit" className="btn btn-xs btn-info w-full" disabled={isSelectionSizeUnchanged}>
+                            <button
+                              type="submit"
+                              className="btn btn-xs btn-info w-full"
+                              disabled={isSelectionSizeUnchanged}
+                            >
                               Apply
                             </button>
                           </div>
@@ -3316,249 +3697,28 @@ export function EditorApp() {
                       </form>
                     </div>
                   ) : (
-                    <div>Use the marquee tool to select any canvas region, then drag inside it to move the flattened image selection.</div>
-                  )}
-                </div>
-              </section>
-
-              <section>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">Active Object</div>
-                <div className="rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
-                  {activeLayer ? (
-                    <div className="space-y-3">
-                      <div className="text-xs text-base-content/55">
-                        Use math and variables like `imageX`, `imageY`, `imageWidth`, `imageHeight`, `canvasWidth`, and `canvasHeight`.
-                      </div>
-                      <div className="font-medium text-base-content">{activeLayer.name}</div>
-                      <div className="text-xs uppercase tracking-[0.14em] text-base-content/50">
-                        {activeLayer.type === 'highlight' ? 'Highlight' : activeLayer.type === 'shape' ? 'Shape' : 'Image'}
-                      </div>
-                      <div>Position: {formatPixels(activeLayer.x)}, {formatPixels(activeLayer.y)}</div>
-                      <div>Display size: {formatPixels(activeLayer.width)} x {formatPixels(activeLayer.height)}</div>
-                      {isImageLayer(activeLayer) && <div>Raster size: {formatPixels(activeLayer.pixelWidth)} x {formatPixels(activeLayer.pixelHeight)}</div>}
-                      {layerPositionDraft && layerPositionDraft.layerId === activeLayer.id && (
-                        <>
-                          <form
-                            className="space-y-2"
-                            onSubmit={event => {
-                              event.preventDefault()
-                              applyInspectorPosition()
-                            }}
-                          >
-                            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Placement</div>
-                            <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
-                              <label className="form-control gap-1">
-                                <span className="label text-[11px]">X</span>
-                                <input
-                                  className="input input-xs"
-                                  value={layerPositionDraft.x}
-                                  onChange={event =>
-                                    setLayerPositionDraft(current =>
-                                      current ? { ...current, x: event.target.value } : current
-                                    )
-                                  }
-                                />
-                              </label>
-                              <label className="form-control gap-1">
-                                <span className="label text-[11px]">Y</span>
-                                <input
-                                  className="input input-xs"
-                                  value={layerPositionDraft.y}
-                                  onChange={event =>
-                                    setLayerPositionDraft(current =>
-                                      current ? { ...current, y: event.target.value } : current
-                                    )
-                                  }
-                                />
-                              </label>
-                              <div className="flex items-end">
-                                <button type="submit" className="btn btn-xs btn-info w-full" disabled={isInspectorPositionUnchanged}>
-                                  Apply
-                                </button>
-                              </div>
-                            </div>
-                          </form>
-                        </>
-                      )}
-                      {!isHighlightLayer(activeLayer) && layerSizeDraft && layerSizeDraft.layerId === activeLayer.id && (
-                        <form
-                          className="space-y-2"
-                          onSubmit={event => {
-                            event.preventDefault()
-                            applyInspectorSize()
-                          }}
-                        >
-                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Exact size</div>
-                          <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
-                            <label className="form-control gap-1">
-                              <span className="label text-[11px]">W</span>
-                              <input
-                                className="input input-xs"
-                                value={layerSizeDraft.width}
-                                onChange={event =>
-                                  setLayerSizeDraft(current =>
-                                    current ? { ...current, width: event.target.value } : current
-                                  )
-                                }
-                              />
-                            </label>
-                            <label className="form-control gap-1">
-                              <span className="label text-[11px]">H</span>
-                              <input
-                                className="input input-xs"
-                                value={layerSizeDraft.height}
-                                onChange={event =>
-                                  setLayerSizeDraft(current =>
-                                    current ? { ...current, height: event.target.value } : current
-                                  )
-                                }
-                              />
-                            </label>
-                            <div className="flex items-end">
-                              <button type="submit" className="btn btn-xs btn-info w-full" disabled={isInspectorSizeUnchanged}>
-                                Apply
-                              </button>
-                            </div>
-                          </div>
-                        </form>
-                      )}
-                      {activeHighlight && (
-                        <div className="space-y-3 rounded-xl border border-base-content/10 bg-base-100/40 p-3">
-                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Highlight style</div>
-                          <div className="grid grid-cols-[auto_1fr] items-center gap-3">
-                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Color</span>
-                            <input
-                              type="color"
-                              className="input input-xs h-9 w-full p-1"
-                              value={activeHighlight.color}
-                              onChange={event => applyActiveHighlightStyle({ color: event.target.value })}
-                            />
-                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Opacity</span>
-                            <div className="grid grid-cols-[1fr_auto] items-center gap-2">
-                              <input
-                                type="range"
-                                min="0.05"
-                                max="1"
-                                step="0.05"
-                                className="range range-xs"
-                                value={activeHighlight.opacity}
-                                onChange={event =>
-                                  applyActiveHighlightStyle({
-                                    opacity: clampHighlightOpacity(Number(event.target.value)),
-                                  })
-                                }
-                              />
-                              <span className="w-10 text-right text-xs">{Math.round(activeHighlight.opacity * 100)}%</span>
-                            </div>
-                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Brush</span>
-                            <select
-                              className="select select-xs"
-                              value={activeHighlight.brushShape}
-                              onChange={event =>
-                                applyActiveHighlightStyle({
-                                  brushShape: event.target.value as HighlightBrushShape,
-                                })
-                              }
-                            >
-                              <option value="circle">Circle</option>
-                              <option value="square">Square</option>
-                            </select>
-                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Size</span>
-                            <input
-                              type="number"
-                              min={4}
-                              max={256}
-                              className="input input-xs"
-                              value={activeHighlight.brushSize}
-                              onChange={event =>
-                                applyActiveHighlightStyle({
-                                  brushSize: clampHighlightBrushSize(Number(event.target.value) || activeHighlight.brushSize),
-                                })
-                              }
-                            />
-                          </div>
-                        </div>
-                      )}
-                      {activeShape && (
-                        <div className="space-y-3 rounded-xl border border-base-content/10 bg-base-100/40 p-3">
-                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Shape style</div>
-                          <div className="grid grid-cols-[auto_1fr] items-center gap-3">
-                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Type</span>
-                            <select
-                              className="select select-xs"
-                              value={activeShape.shape}
-                              onChange={event =>
-                                applyActiveShapeStyle({
-                                  shape: event.target.value as ShapeType,
-                                })
-                              }
-                            >
-                              <option value="rectangle">Rectangle</option>
-                              <option value="circle">Circle</option>
-                              <option value="ellipse">Ellipse</option>
-                            </select>
-                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Fill</span>
-                            <input
-                              type="color"
-                              className="input input-xs h-9 w-full p-1"
-                              value={activeShape.fillColor}
-                              onChange={event => applyActiveShapeStyle({ fillColor: event.target.value })}
-                            />
-                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Border</span>
-                            <input
-                              type="color"
-                              className="input input-xs h-9 w-full p-1"
-                              value={activeShape.borderColor}
-                              onChange={event => applyActiveShapeStyle({ borderColor: event.target.value })}
-                            />
-                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Radius</span>
-                            <input
-                              type="number"
-                              min={0}
-                              className="input input-xs"
-                              value={activeShape.borderRadius}
-                              disabled={activeShape.shape !== 'rectangle'}
-                              onChange={event =>
-                                applyActiveShapeStyle({
-                                  borderRadius: Math.max(0, Math.round(Number(event.target.value) || 0)),
-                                })
-                              }
-                            />
-                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Opacity</span>
-                            <div className="grid grid-cols-[1fr_auto] items-center gap-2">
-                              <input
-                                type="range"
-                                min="0.05"
-                                max="1"
-                                step="0.05"
-                                className="range range-xs"
-                                value={activeShape.opacity}
-                                onChange={event =>
-                                  applyActiveShapeStyle({
-                                    opacity: clampShapeOpacity(Number(event.target.value)),
-                                  })
-                                }
-                              />
-                              <span className="w-10 text-right text-xs">{Math.round(activeShape.opacity * 100)}%</span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
+                    <div>
+                      Use the marquee tool to select any canvas region, then drag inside it to move the flattened image
+                      selection.
                     </div>
-                  ) : (
-                    <div>Select an object to inspect or move it.</div>
                   )}
                 </div>
               </section>
 
               <section>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">Objects</div>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
+                  Objects
+                </div>
                 <div className="rounded-2xl border border-base-content/10 bg-base-200/60 p-3 text-sm text-base-content/70">
                   {documentState && documentState.layers.length > 0 ? (
                     <div className="space-y-2">
-                      <div className="text-xs text-base-content/55">Top to bottom order. Use the arrows to change stacking.</div>
+                      <div className="text-xs text-base-content/55">
+                        Top to bottom order. Use the arrows to change stacking.
+                      </div>
                       {[...documentState.layers].reverse().map(layer => {
-                        const originalIndex = documentState.layers.findIndex(currentLayer => currentLayer.id === layer.id)
+                        const originalIndex = documentState.layers.findIndex(
+                          currentLayer => currentLayer.id === layer.id
+                        )
                         const canMoveUp = originalIndex < documentState.layers.length - 1
                         const canMoveDown = originalIndex > 0
                         const isActive = activeLayer?.id === layer.id
@@ -3572,19 +3732,42 @@ export function EditorApp() {
                             )}
                           >
                             <button
-                              className={cn('min-w-0 flex-1 text-left text-sm', isActive ? 'text-base-content' : 'text-base-content/75')}
-                              onClick={() => setDocumentState(current => (current ? { ...current, activeLayerId: layer.id } : current))}
+                              className={cn(
+                                'min-w-0 flex-1 text-left text-sm',
+                                isActive ? 'text-base-content' : 'text-base-content/75'
+                              )}
+                              onClick={() =>
+                                setDocumentState(current =>
+                                  current ? { ...current, activeLayerId: layer.id } : current
+                                )
+                              }
                             >
                               <div className="truncate font-medium">{layer.name}</div>
-                              <div className="text-[11px] uppercase tracking-[0.14em] text-base-content/45">{layer.type}</div>
+                              <div className="text-[11px] uppercase tracking-[0.14em] text-base-content/45">
+                                {layer.type}
+                              </div>
                             </button>
-                            <button className="btn btn-xs btn-ghost" onClick={() => moveLayer(layer.id, 'up')} disabled={!canMoveUp} title="Move toward front">
+                            <button
+                              className="btn btn-xs btn-ghost"
+                              onClick={() => moveLayer(layer.id, 'up')}
+                              disabled={!canMoveUp}
+                              title="Move toward front"
+                            >
                               ↑
                             </button>
-                            <button className="btn btn-xs btn-ghost" onClick={() => moveLayer(layer.id, 'down')} disabled={!canMoveDown} title="Move toward back">
+                            <button
+                              className="btn btn-xs btn-ghost"
+                              onClick={() => moveLayer(layer.id, 'down')}
+                              disabled={!canMoveDown}
+                              title="Move toward back"
+                            >
                               ↓
                             </button>
-                            <button className="btn btn-xs btn-ghost text-error" onClick={() => deleteLayer(layer.id)} title="Delete object">
+                            <button
+                              className="btn btn-xs btn-ghost text-error"
+                              onClick={() => deleteLayer(layer.id)}
+                              title="Delete object"
+                            >
                               ×
                             </button>
                           </div>
@@ -3598,7 +3781,9 @@ export function EditorApp() {
               </section>
 
               <section>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">History</div>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
+                  History
+                </div>
                 <div className="rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
                   <div>{history.past.length} undo step(s)</div>
                   <div>{history.future.length} redo step(s)</div>
@@ -3611,11 +3796,19 @@ export function EditorApp() {
             <div>
               Tool:{' '}
               <span className="text-base-content/80">
-                {tool === 'select' ? 'Select' : tool === 'marquee' ? 'Marquee' : tool === 'highlight' ? 'Highlight' : 'Shape'}
+                {tool === 'select'
+                  ? 'Select'
+                  : tool === 'marquee'
+                    ? 'Marquee'
+                    : tool === 'highlight'
+                      ? 'Highlight'
+                      : 'Shape'}
               </span>
             </div>
             <div>
-              Shortcuts: <kbd className="kbd kbd-xs">Cmd</kbd> + <kbd className="kbd kbd-xs">Z</kbd> undo, <kbd className="kbd kbd-xs">Shift</kbd> + <kbd className="kbd kbd-xs">Cmd</kbd> + <kbd className="kbd kbd-xs">Z</kbd> redo
+              Shortcuts: <kbd className="kbd kbd-xs">Cmd</kbd> + <kbd className="kbd kbd-xs">Z</kbd> undo,{' '}
+              <kbd className="kbd kbd-xs">Shift</kbd> + <kbd className="kbd kbd-xs">Cmd</kbd> +{' '}
+              <kbd className="kbd kbd-xs">Z</kbd> redo
             </div>
           </div>
         </main>
@@ -3630,7 +3823,9 @@ export function EditorApp() {
               applyExactSize()
             }}
           >
-            <p className="text-sm text-base-content/70">Use math and variables like `imageWidth`, `imageHeight`, `canvasWidth`, and `canvasHeight`.</p>
+            <p className="text-sm text-base-content/70">
+              Use math and variables like `imageWidth`, `imageHeight`, `canvasWidth`, and `canvasHeight`.
+            </p>
             <label className="form-control gap-2">
               <span className="label">Width</span>
               <input
@@ -3706,7 +3901,9 @@ export function EditorApp() {
                     className="checkbox"
                     checked={sizeDialog.keepAspectRatio}
                     onChange={event =>
-                      setSizeDialog(current => (current ? { ...current, keepAspectRatio: event.target.checked } : current))
+                      setSizeDialog(current =>
+                        current ? { ...current, keepAspectRatio: event.target.checked } : current
+                      )
                     }
                   />
                   Keep aspect ratio
@@ -3734,7 +3931,10 @@ export function EditorApp() {
               applyExactPosition()
             }}
           >
-            <p className="text-sm text-base-content/70">Coordinates use the top-left corner of the selected object on the document canvas. Use math and variables like `imageX`, `imageY`, `canvasWidth`, and `canvasHeight`.</p>
+            <p className="text-sm text-base-content/70">
+              Coordinates use the top-left corner of the selected object on the document canvas. Use math and variables
+              like `imageX`, `imageY`, `canvasWidth`, and `canvasHeight`.
+            </p>
             <label className="form-control gap-2">
               <span className="label">X</span>
               <input
@@ -3846,7 +4046,9 @@ export function EditorApp() {
                 }
               />
             </div>
-            <div className="text-xs text-base-content/55">Use the slider, buttons, or mouse wheel while hovering the preview.</div>
+            <div className="text-xs text-base-content/55">
+              Use the slider, buttons, or mouse wheel while hovering the preview.
+            </div>
             <div
               className="min-h-0 flex-1 overflow-auto rounded-2xl border border-base-content/10 bg-[#11141b] p-4"
               onWheel={event => {
