@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import useMeasure from 'react-use-measure'
 import {
+  EyeIcon,
   FolderOpenIcon,
   ImagePlusIcon,
+  MinusIcon,
   MousePointer2Icon,
+  PlusIcon,
   Redo2Icon,
   SaveIcon,
   ScanLineIcon,
@@ -73,6 +76,11 @@ type PositionDialogState = {
   layerId: string
   x: string
   y: string
+}
+
+type ImagePreviewDialogState = {
+  layerId: string
+  zoom: number
 }
 
 type CanvasDraftState = {
@@ -476,6 +484,10 @@ function snapToStep(value: number, step: number): number {
   return Math.round(value / step) * step
 }
 
+function clampZoom(value: number): number {
+  return clamp(Math.round(value * 100) / 100, 0.1, 16)
+}
+
 function moveArrayItem<T>(items: T[], fromIndex: number, toIndex: number): T[] {
   const nextItems = [...items]
   const [item] = nextItems.splice(fromIndex, 1)
@@ -492,6 +504,7 @@ export function EditorApp() {
   const [selectionPreview, setSelectionPreview] = useState<SelectionPreview | null>(null)
   const [sizeDialog, setSizeDialog] = useState<SizeDialogState | null>(null)
   const [positionDialog, setPositionDialog] = useState<PositionDialogState | null>(null)
+  const [imagePreviewDialog, setImagePreviewDialog] = useState<ImagePreviewDialogState | null>(null)
   const [canvasDraft, setCanvasDraft] = useState<CanvasDraftState>(DEFAULT_EDITOR_SESSION.canvasDraft)
   const [pasteSizeDraft, setPasteSizeDraft] = useState<PasteSizeDraftState>({ width: '', height: '' })
   const [movementStep, setMovementStep] = useState(DEFAULT_EDITOR_SESSION.movementStep)
@@ -592,6 +605,7 @@ export function EditorApp() {
     }
     setInteraction(null)
     setSelectionPreview(null)
+    setImagePreviewDialog(null)
     setLayerPositionDraft(args.nextLayerPositionDraft)
     setLayerSizeDraft(args.nextLayerSizeDraft)
     setSelectionDraft(args.nextSelectionDraft)
@@ -1734,6 +1748,13 @@ export function EditorApp() {
     })
   }
 
+  function openImagePreviewDialog(layerId: string) {
+    setImagePreviewDialog({
+      layerId,
+      zoom: 1,
+    })
+  }
+
   function applyExactSize() {
     if (!documentState || !sizeDialog) return
     const layer = documentState.layers.find(item => item.id === sizeDialog.layerId)
@@ -1937,6 +1958,42 @@ export function EditorApp() {
     }
   }
 
+  async function saveSelectionImage() {
+    if (!documentState?.selection || !mainCanvasRef.current || isSaving) return
+
+    try {
+      setIsSaving(true)
+      const selection = documentState.selection
+      const exportCanvas = document.createElement('canvas')
+      exportCanvas.width = selection.width
+      exportCanvas.height = selection.height
+      const context = exportCanvas.getContext('2d')
+      if (!context) {
+        throw new Error('Could not create selection export canvas')
+      }
+
+      context.drawImage(
+        mainCanvasRef.current,
+        selection.x,
+        selection.y,
+        selection.width,
+        selection.height,
+        0,
+        0,
+        selection.width,
+        selection.height
+      )
+
+      const dataUrl = exportCanvas.toDataURL('image/png')
+      const defaultFileName = `kopa-selection-${selection.width}x${selection.height}.png`
+      await getWindowElectron().saveFinalImage({ dataUrl, defaultFileName })
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to save selection image')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   async function saveFinalImage() {
     if (!documentState || !mainCanvasRef.current || isSaving) return
 
@@ -1991,6 +2048,7 @@ export function EditorApp() {
   const layerMenu = useContextMenu<CanvasContextMenuItem>()
   const selectionContextLayerId = layerMenu.item?.type === 'selection' ? layerMenu.item.layerId : null
   const contextLayerId = layerMenu.item?.type === 'layer' ? layerMenu.item.layerId : selectionContextLayerId
+  const previewLayer = imagePreviewDialog && documentState ? documentState.layers.find(layer => layer.id === imagePreviewDialog.layerId) ?? null : null
   const menuItems =
     layerMenu.item?.type === 'selection'
       ? [
@@ -1998,11 +2056,22 @@ export function EditorApp() {
             view: 'Copy Selection',
             onClick: () => void copySelectionToClipboard(),
           },
+          {
+            view: 'Save Selection...',
+            onClick: () => void saveSelectionImage(),
+          },
           contextLayerId ? { isSeparator: true as const } : null,
           contextLayerId
             ? {
-            view: 'Delete Image',
-            onClick: () => deleteLayer(contextLayerId),
+                view: 'Preview Image...',
+                onClick: () => openImagePreviewDialog(contextLayerId),
+              }
+            : null,
+          contextLayerId ? { isSeparator: true as const } : null,
+          contextLayerId
+            ? {
+                view: 'Delete Image',
+                onClick: () => deleteLayer(contextLayerId),
               }
             : null,
           contextLayerId ? { isSeparator: true as const } : null,
@@ -2021,6 +2090,11 @@ export function EditorApp() {
         ]
       : layerMenu.item?.type === 'layer' && contextLayerId
         ? [
+            {
+              view: 'Preview Image...',
+              onClick: () => openImagePreviewDialog(contextLayerId),
+            },
+            { isSeparator: true as const },
             {
               view: 'Delete Image',
               onClick: () => deleteLayer(contextLayerId),
@@ -2507,6 +2581,14 @@ export function EditorApp() {
                       <div className="text-xs text-base-content/55">
                         Use math and variables like `selectionX`, `selectionY`, `selectionWidth`, `selectionHeight`, `canvasWidth`, and `canvasHeight`.
                       </div>
+                      <div className="flex gap-2">
+                        <Button className="btn-sm btn-soft flex-1" onClick={() => void copySelectionToClipboard()}>
+                          Copy
+                        </Button>
+                        <Button className="btn-sm btn-soft flex-1" onClick={() => void saveSelectionImage()} disabled={isSaving}>
+                          Save PNG
+                        </Button>
+                      </div>
                       <div className="space-y-1">
                         <div>Origin: {formatPixels(documentState.selection.x)}, {formatPixels(documentState.selection.y)}</div>
                         <div>Size: {formatPixels(documentState.selection.width)} x {formatPixels(documentState.selection.height)}</div>
@@ -2900,6 +2982,118 @@ export function EditorApp() {
               </button>
             </div>
           </form>
+        </Dialog>
+      )}
+
+      {imagePreviewDialog && previewLayer && (
+        <Dialog
+          title={`Preview Image: ${previewLayer.name}`}
+          onClose={() => setImagePreviewDialog(null)}
+          className="h-[90vh] w-[90vw] max-h-[90vh] max-w-[90vw]"
+        >
+          <div className="flex h-full min-h-0 flex-col gap-4">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost btn-square"
+                onClick={() =>
+                  setImagePreviewDialog(current =>
+                    current
+                      ? {
+                          ...current,
+                          zoom: clampZoom(current.zoom / 1.25),
+                        }
+                      : current
+                  )
+                }
+                title="Zoom out"
+              >
+                <MinusIcon className="size-4" />
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost btn-square"
+                onClick={() =>
+                  setImagePreviewDialog(current =>
+                    current
+                      ? {
+                          ...current,
+                          zoom: 1,
+                        }
+                      : current
+                  )
+                }
+                title="Reset zoom"
+              >
+                <EyeIcon className="size-4" />
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost btn-square"
+                onClick={() =>
+                  setImagePreviewDialog(current =>
+                    current
+                      ? {
+                          ...current,
+                          zoom: clampZoom(current.zoom * 1.25),
+                        }
+                      : current
+                  )
+                }
+                title="Zoom in"
+              >
+                <PlusIcon className="size-4" />
+              </button>
+              <div className="min-w-20 text-sm text-base-content/70">{Math.round(imagePreviewDialog.zoom * 100)}%</div>
+              <input
+                type="range"
+                min="10"
+                max="1600"
+                step="10"
+                className="range range-xs flex-1"
+                value={Math.round(imagePreviewDialog.zoom * 100)}
+                onChange={event =>
+                  setImagePreviewDialog(current =>
+                    current
+                      ? {
+                          ...current,
+                          zoom: clampZoom(Number(event.target.value) / 100),
+                        }
+                      : current
+                  )
+                }
+              />
+            </div>
+            <div className="text-xs text-base-content/55">Use the slider, buttons, or mouse wheel while hovering the preview.</div>
+            <div
+              className="min-h-0 flex-1 overflow-auto rounded-2xl border border-base-content/10 bg-[#11141b] p-4"
+              onWheel={event => {
+                event.preventDefault()
+                const direction = event.deltaY < 0 ? 1.1 : 1 / 1.1
+                setImagePreviewDialog(current =>
+                  current
+                    ? {
+                        ...current,
+                        zoom: clampZoom(current.zoom * direction),
+                      }
+                    : current
+                )
+              }}
+            >
+              <div className="flex min-h-[24rem] min-w-full items-center justify-center">
+                <img
+                  src={previewLayer.dataUrl}
+                  alt={previewLayer.name}
+                  className="max-w-none select-none"
+                  draggable={false}
+                  style={{
+                    width: previewLayer.pixelWidth * imagePreviewDialog.zoom,
+                    height: previewLayer.pixelHeight * imagePreviewDialog.zoom,
+                  }}
+                />
+              </div>
+            </div>
+          </div>
         </Dialog>
       )}
 
