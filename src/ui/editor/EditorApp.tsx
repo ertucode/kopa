@@ -64,6 +64,14 @@ import {
   parseRoundedMathExpression,
   resolveCustomVariables,
 } from '../utils/customVariableUtils'
+import {
+  LayerPositionDraftState,
+  LayerSizeDraftState,
+  SelectionDraftState,
+  PasteSizeDraftState,
+  CanvasDraftState,
+} from './editorSession'
+import { useToolStore } from './editorSimpleStores'
 
 const DOCUMENT_PRESETS: NewDocumentPreset[] = [
   { label: 'Avatar', width: 512, height: 512 },
@@ -135,35 +143,6 @@ type PositionDialogState = {
 type ImagePreviewDialogState = {
   layerId: string
   zoom: number
-}
-
-type CanvasDraftState = {
-  width: string
-  height: string
-}
-
-type PasteSizeDraftState = {
-  width: string
-  height: string
-}
-
-type LayerPositionDraftState = {
-  layerId: string
-  x: string
-  y: string
-}
-
-type LayerSizeDraftState = {
-  layerId: string
-  width: string
-  height: string
-}
-
-type SelectionDraftState = {
-  x: string
-  y: string
-  width: string
-  height: string
 }
 
 type ProjectNameDraftState = {
@@ -402,7 +381,7 @@ function moveArrayItem<T>(items: T[], fromIndex: number, toIndex: number): T[] {
 export function EditorApp() {
   const [documentState, setDocumentState] = useState<EditorDocument | null>(null)
   const [history, setHistory] = useState<{ past: HistoryEntry[]; future: HistoryEntry[] }>({ past: [], future: [] })
-  const [tool, setTool] = useState<EditorTool>(DEFAULT_EDITOR_SESSION.tool)
+  const [tool, setTool] = useToolStore()
   const [interaction, setInteraction] = useState<InteractionState>(null)
   const [selectionPreview, setSelectionPreview] = useState<SelectionPreview | null>(null)
   const [sizeDialog, setSizeDialog] = useState<SizeDialogState | null>(null)
@@ -1593,7 +1572,16 @@ export function EditorApp() {
     const absolutePoints = getHighlightAbsolutePoints(layer)
     const lastPoint = absolutePoints[absolutePoints.length - 1]
 
-    console.log('[Highlight] update - constrainAxis:', constrainAxis, 'axisLock:', interaction.axisLock, 'lastPoint:', lastPoint, 'pointer:', pointer)
+    console.log(
+      '[Highlight] update - constrainAxis:',
+      constrainAxis,
+      'axisLock:',
+      interaction.axisLock,
+      'lastPoint:',
+      lastPoint,
+      'pointer:',
+      pointer
+    )
 
     let constrainedPointer = pointer
     let nextAxisLock = interaction.axisLock
