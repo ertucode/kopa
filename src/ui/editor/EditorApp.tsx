@@ -36,6 +36,25 @@ import {
   ShapeLayer,
   ShapeType,
 } from './types'
+import {
+  clampShapeOpacity,
+  createShapeLayer,
+  getShapeRectFromDrag,
+  updateShapeLayerRect,
+  updateShapeLayerStyle,
+  drawShapeLayer,
+  ShapeSettingsState,
+} from './shapeUtils'
+import {
+  clampHighlightOpacity,
+  clampHighlightBrushSize,
+  createHighlightLayer,
+  getHighlightAbsolutePoints,
+  updateHighlightLayerPoints,
+  updateHighlightLayerStyle,
+  drawHighlightLayer,
+  HighlightSettingsState,
+} from './highlightUtils'
 import { FormItem } from './form/FormItem'
 import { ApplyButton } from './form/ApplyButton'
 import { PanelForm } from './form/PanelForm'
@@ -147,22 +166,6 @@ type SelectionDraftState = {
 
 type ProjectNameDraftState = {
   value: string
-}
-
-type HighlightSettingsState = {
-  color: string
-  opacity: number
-  brushShape: HighlightBrushShape
-  brushSize: number
-}
-
-type ShapeSettingsState = {
-  shape: ShapeType
-  fillColor: string
-  borderColor: string
-  borderRadius: number
-  borderWidth?: number
-  opacity: number
 }
 
 type SelectionPreview = {
@@ -344,253 +347,6 @@ function isHighlightLayer(layer: EditorLayer): layer is HighlightLayer {
 
 function isShapeLayer(layer: EditorLayer): layer is ShapeLayer {
   return layer.type === 'shape'
-}
-
-function clampHighlightOpacity(value: number): number {
-  return clamp(Math.round(value * 100) / 100, 0.05, 1)
-}
-
-function clampHighlightBrushSize(value: number): number {
-  return clamp(Math.round(value), 1, 256)
-}
-
-function clampShapeOpacity(value: number): number {
-  return clamp(Math.round(value * 100) / 100, 0.05, 1)
-}
-
-function clampShapeBorderRadius(value: number, width: number, height: number): number {
-  return clamp(Math.round(value), 0, Math.floor(Math.min(width, height) / 2))
-}
-
-function normalizeCircleRect(start: Point, current: Point): Rect {
-  const deltaX = current.x - start.x
-  const deltaY = current.y - start.y
-  const size = Math.max(1, Math.max(Math.abs(deltaX), Math.abs(deltaY)))
-
-  return {
-    x: deltaX >= 0 ? start.x : start.x - size,
-    y: deltaY >= 0 ? start.y : start.y - size,
-    width: size,
-    height: size,
-  }
-}
-
-function normalizeHighlightPoints(
-  points: Point[],
-  brushSize: number
-): { x: number; y: number; width: number; height: number; points: Point[] } {
-  const radius = brushSize / 2
-  const minX = Math.min(...points.map(point => point.x)) - radius
-  const minY = Math.min(...points.map(point => point.y)) - radius
-  const maxX = Math.max(...points.map(point => point.x)) + radius
-  const maxY = Math.max(...points.map(point => point.y)) + radius
-
-  return {
-    x: Math.round(minX),
-    y: Math.round(minY),
-    width: Math.max(1, Math.round(maxX - minX)),
-    height: Math.max(1, Math.round(maxY - minY)),
-    points: points.map(point => ({
-      x: point.x - minX,
-      y: point.y - minY,
-    })),
-  }
-}
-
-function createHighlightLayer(points: Point[], settings: HighlightSettingsState): HighlightLayer {
-  const normalized = normalizeHighlightPoints(points, settings.brushSize)
-  return {
-    id: crypto.randomUUID(),
-    type: 'highlight',
-    name: 'Highlight',
-    visible: true,
-    opacity: settings.opacity,
-    x: normalized.x,
-    y: normalized.y,
-    width: normalized.width,
-    height: normalized.height,
-    color: settings.color,
-    brushSize: settings.brushSize,
-    brushShape: settings.brushShape,
-    points: normalized.points,
-  }
-}
-
-function createShapeLayer(rect: Rect, settings: ShapeSettingsState): ShapeLayer {
-  return {
-    id: crypto.randomUUID(),
-    type: 'shape',
-    name: settings.shape[0].toUpperCase() + settings.shape.slice(1),
-    visible: true,
-    opacity: settings.opacity,
-    x: Math.round(rect.x),
-    y: Math.round(rect.y),
-    width: Math.max(1, Math.round(rect.width)),
-    height: Math.max(1, Math.round(rect.height)),
-    shape: settings.shape,
-    fillColor: settings.fillColor,
-    borderColor: settings.borderColor,
-    borderWidth: settings.borderWidth,
-    borderRadius: clampShapeBorderRadius(settings.borderRadius, rect.width, rect.height),
-  }
-}
-
-function getShapeRectFromDrag(settings: ShapeSettingsState, start: Point, current: Point): Rect {
-  if (settings.shape === 'circle') {
-    return normalizeCircleRect(start, current)
-  }
-
-  return normalizeRect(start, current)
-}
-
-function updateShapeLayerRect(layer: ShapeLayer, rect: Rect): ShapeLayer {
-  const width = Math.max(1, Math.round(rect.width))
-  const height = Math.max(1, Math.round(rect.height))
-
-  return {
-    ...layer,
-    x: Math.round(rect.x),
-    y: Math.round(rect.y),
-    width,
-    height,
-    borderRadius: clampShapeBorderRadius(layer.borderRadius, width, height),
-  }
-}
-
-function updateShapeLayerStyle(
-  layer: ShapeLayer,
-  changes: Partial<
-    Pick<
-      ShapeLayer,
-      'shape' | 'fillColor' | 'borderColor' | 'borderRadius' | 'opacity' | 'width' | 'height' | 'borderWidth'
-    >
-  >
-): ShapeLayer {
-  const nextShape = changes.shape ?? layer.shape
-  let width = Math.max(1, Math.round(changes.width ?? layer.width))
-  let height = Math.max(1, Math.round(changes.height ?? layer.height))
-
-  if (nextShape === 'circle') {
-    const size = Math.max(width, height)
-    width = size
-    height = size
-  }
-
-  return {
-    ...layer,
-    ...changes,
-    name: nextShape[0].toUpperCase() + nextShape.slice(1),
-    shape: nextShape,
-    width,
-    height,
-    borderRadius: clampShapeBorderRadius(changes.borderRadius ?? layer.borderRadius, width, height),
-    borderWidth: changes.borderWidth ?? layer.borderWidth,
-  }
-}
-
-function buildRoundedRectPath(context: CanvasRenderingContext2D, rect: Rect, radius: number) {
-  context.beginPath()
-  context.roundRect(rect.x, rect.y, rect.width, rect.height, radius)
-}
-
-function drawShapeLayer(context: CanvasRenderingContext2D, layer: ShapeLayer) {
-  const rect = { x: layer.x, y: layer.y, width: layer.width, height: layer.height }
-
-  context.save()
-  context.globalAlpha = layer.opacity
-  context.fillStyle = layer.fillColor
-  context.strokeStyle = layer.borderColor
-  context.lineWidth = layer.borderWidth ?? 2
-
-  if (layer.shape === 'rectangle') {
-    buildRoundedRectPath(context, rect, clampShapeBorderRadius(layer.borderRadius, layer.width, layer.height))
-  } else {
-    context.beginPath()
-    context.ellipse(
-      layer.x + layer.width / 2,
-      layer.y + layer.height / 2,
-      layer.width / 2,
-      layer.height / 2,
-      0,
-      0,
-      Math.PI * 2
-    )
-  }
-
-  context.fill()
-  context.stroke()
-  context.restore()
-}
-
-function getHighlightAbsolutePoints(layer: HighlightLayer): Point[] {
-  return layer.points.map(point => ({
-    x: layer.x + point.x,
-    y: layer.y + point.y,
-  }))
-}
-
-function updateHighlightLayerPoints(layer: HighlightLayer, points: Point[]): HighlightLayer {
-  const normalized = normalizeHighlightPoints(points, layer.brushSize)
-  return {
-    ...layer,
-    x: normalized.x,
-    y: normalized.y,
-    width: normalized.width,
-    height: normalized.height,
-    points: normalized.points,
-  }
-}
-
-function updateHighlightLayerStyle(
-  layer: HighlightLayer,
-  changes: Partial<Pick<HighlightLayer, 'color' | 'opacity' | 'brushShape' | 'brushSize'>>
-): HighlightLayer {
-  const absolutePoints = getHighlightAbsolutePoints(layer)
-  const nextLayer: HighlightLayer = {
-    ...layer,
-    ...changes,
-  }
-
-  if (changes.brushSize !== undefined) {
-    return updateHighlightLayerPoints(nextLayer, absolutePoints)
-  }
-
-  return nextLayer
-}
-
-function drawHighlightLayer(context: CanvasRenderingContext2D, layer: HighlightLayer) {
-  if (!layer.points.length) return
-
-  context.save()
-  context.globalAlpha = layer.opacity
-  context.fillStyle = layer.color
-  context.strokeStyle = layer.color
-  context.lineWidth = layer.brushSize
-  context.lineCap = layer.brushShape === 'circle' ? 'round' : 'square'
-  context.lineJoin = layer.brushShape === 'circle' ? 'round' : 'miter'
-
-  if (layer.points.length === 1) {
-    const point = layer.points[0]
-    if (layer.brushShape === 'circle') {
-      context.beginPath()
-      context.arc(layer.x + point.x, layer.y + point.y, layer.brushSize / 2, 0, Math.PI * 2)
-      context.fill()
-    } else {
-      const size = layer.brushSize
-      context.fillRect(layer.x + point.x - size / 2, layer.y + point.y - size / 2, size, size)
-    }
-    context.restore()
-    return
-  }
-
-  context.beginPath()
-  context.moveTo(layer.x + layer.points[0].x, layer.y + layer.points[0].y)
-  for (let index = 1; index < layer.points.length; index += 1) {
-    const point = layer.points[index]
-    context.lineTo(layer.x + point.x, layer.y + point.y)
-  }
-  context.stroke()
-  context.restore()
 }
 
 function getPointerOnCanvas(event: React.PointerEvent<HTMLCanvasElement>, canvas: HTMLCanvasElement): Point {
