@@ -79,7 +79,7 @@ function drawShapeLayer(context: CanvasRenderingContext2D, layer: ShapeLayer) {
   context.globalAlpha = layer.opacity
   context.fillStyle = layer.fillColor
   context.strokeStyle = layer.borderColor
-  context.lineWidth = 2
+  context.lineWidth = layer.borderWidth ?? 2
 
   if (layer.shape === 'rectangle') {
     context.beginPath()
@@ -149,7 +149,10 @@ async function renderDocumentToCanvas(documentState: EditorDocument): Promise<HT
   return canvas
 }
 
-function getSelectionIntersection(selection: PixelSelection, layer: ImageLayer): {
+function getSelectionIntersection(
+  selection: PixelSelection,
+  layer: ImageLayer
+): {
   sourceX: number
   sourceY: number
   sourceWidth: number
@@ -175,7 +178,10 @@ function getSelectionIntersection(selection: PixelSelection, layer: ImageLayer):
   }
 }
 
-export async function cutSelectionFromDocument(documentState: EditorDocument, selection: PixelSelection): Promise<{
+export async function cutSelectionFromDocument(
+  documentState: EditorDocument,
+  selection: PixelSelection
+): Promise<{
   layers: EditorLayer[]
   floatingDataUrl: string
 }> {

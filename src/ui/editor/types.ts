@@ -41,6 +41,7 @@ export type ShapeLayer = LayerBase & {
   fillColor: string
   borderColor: string
   borderRadius: number
+  borderWidth?: number
 }
 
 export type EditorLayer = ImageLayer | HighlightLayer | ShapeLayer

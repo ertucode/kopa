@@ -39,6 +39,12 @@ import {
 import { FormItem } from './form/FormItem'
 import { ApplyButton } from './form/ApplyButton'
 import { PanelForm } from './form/PanelForm'
+import {
+  CustomVariableDraft,
+  ExpressionVariables,
+  parseRoundedMathExpression,
+  resolveCustomVariables,
+} from '../utils/customVariableUtils'
 
 const DOCUMENT_PRESETS: NewDocumentPreset[] = [
   { label: 'Avatar', width: 512, height: 512 },
@@ -139,12 +145,6 @@ type SelectionDraftState = {
   height: string
 }
 
-type CustomVariableDraft = {
-  id: string
-  name: string
-  expression: string
-}
-
 type ProjectNameDraftState = {
   value: string
 }
@@ -161,10 +161,9 @@ type ShapeSettingsState = {
   fillColor: string
   borderColor: string
   borderRadius: number
+  borderWidth?: number
   opacity: number
 }
-
-type ExpressionVariables = Record<string, number>
 
 type SelectionPreview = {
   floatingDataUrl: string
@@ -222,6 +221,7 @@ const DEFAULT_EDITOR_SESSION: EditorSessionState = {
     shape: 'rectangle',
     fillColor: '#60a5fa',
     borderColor: '#dbeafe',
+    borderWidth: 2,
     borderRadius: 16,
     opacity: 0.8,
   },
@@ -351,7 +351,7 @@ function clampHighlightOpacity(value: number): number {
 }
 
 function clampHighlightBrushSize(value: number): number {
-  return clamp(Math.round(value), 4, 256)
+  return clamp(Math.round(value), 1, 256)
 }
 
 function clampShapeOpacity(value: number): number {
@@ -430,6 +430,7 @@ function createShapeLayer(rect: Rect, settings: ShapeSettingsState): ShapeLayer 
     shape: settings.shape,
     fillColor: settings.fillColor,
     borderColor: settings.borderColor,
+    borderWidth: settings.borderWidth,
     borderRadius: clampShapeBorderRadius(settings.borderRadius, rect.width, rect.height),
   }
 }
@@ -459,7 +460,10 @@ function updateShapeLayerRect(layer: ShapeLayer, rect: Rect): ShapeLayer {
 function updateShapeLayerStyle(
   layer: ShapeLayer,
   changes: Partial<
-    Pick<ShapeLayer, 'shape' | 'fillColor' | 'borderColor' | 'borderRadius' | 'opacity' | 'width' | 'height'>
+    Pick<
+      ShapeLayer,
+      'shape' | 'fillColor' | 'borderColor' | 'borderRadius' | 'opacity' | 'width' | 'height' | 'borderWidth'
+    >
   >
 ): ShapeLayer {
   const nextShape = changes.shape ?? layer.shape
@@ -480,6 +484,7 @@ function updateShapeLayerStyle(
     width,
     height,
     borderRadius: clampShapeBorderRadius(changes.borderRadius ?? layer.borderRadius, width, height),
+    borderWidth: changes.borderWidth ?? layer.borderWidth,
   }
 }
 
@@ -495,7 +500,7 @@ function drawShapeLayer(context: CanvasRenderingContext2D, layer: ShapeLayer) {
   context.globalAlpha = layer.opacity
   context.fillStyle = layer.fillColor
   context.strokeStyle = layer.borderColor
-  context.lineWidth = 2
+  context.lineWidth = layer.borderWidth ?? 2
 
   if (layer.shape === 'rectangle') {
     buildRoundedRectPath(context, rect, clampShapeBorderRadius(layer.borderRadius, layer.width, layer.height))
@@ -618,195 +623,6 @@ function selectionFromDrag(documentState: EditorDocument, start: Point, current:
 
 function formatPixels(value: number): string {
   return `${Math.round(value)} px`
-}
-
-function parseMathExpression(value: string, variables: ExpressionVariables = {}): number | null {
-  const input = value.trim()
-  if (!input) return null
-
-  const matchedTokens = input.match(/[A-Za-z_][A-Za-z0-9_]*|\d*\.\d+|\d+|[()+\-*/%]/g)
-  if (!matchedTokens || matchedTokens.join('') !== input.replace(/\s+/g, '')) {
-    return null
-  }
-
-  const tokens = matchedTokens
-
-  let index = 0
-
-  function parseExpression(): number | null {
-    let result = parseTerm()
-    if (result === null) return null
-
-    while (index < tokens.length) {
-      const operator = tokens[index]
-      if (operator !== '+' && operator !== '-') break
-      index += 1
-      const right = parseTerm()
-      if (right === null) return null
-      result = operator === '+' ? result + right : result - right
-    }
-
-    return result
-  }
-
-  function parseTerm(): number | null {
-    let result = parseFactor()
-    if (result === null) return null
-
-    while (index < tokens.length) {
-      const operator = tokens[index]
-      if (operator !== '*' && operator !== '/' && operator !== '%') break
-      index += 1
-      const right = parseFactor()
-      if (right === null) return null
-      if ((operator === '/' || operator === '%') && right === 0) return null
-      if (operator === '*') {
-        result *= right
-      } else if (operator === '/') {
-        result /= right
-      } else {
-        result %= right
-      }
-    }
-
-    return result
-  }
-
-  function parseFactor(): number | null {
-    const token = tokens[index]
-    if (!token) return null
-
-    if (token === '+') {
-      index += 1
-      return parseFactor()
-    }
-
-    if (token === '-') {
-      index += 1
-      const value = parseFactor()
-      return value === null ? null : -value
-    }
-
-    if (token === '(') {
-      index += 1
-      const value = parseExpression()
-      if (value === null || tokens[index] !== ')') return null
-      index += 1
-      return value
-    }
-
-    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(token)) {
-      index += 1
-      const variable = variables[token]
-      return variable === undefined || !Number.isFinite(variable) ? null : variable
-    }
-
-    index += 1
-    const value = Number(token)
-    return Number.isFinite(value) ? value : null
-  }
-
-  const result = parseExpression()
-  if (result === null || index !== tokens.length || !Number.isFinite(result)) {
-    return null
-  }
-
-  return result
-}
-
-function parseRoundedMathExpression(value: string, variables: ExpressionVariables = {}): number | null {
-  const result = parseMathExpression(value, variables)
-  if (result === null) return null
-  const rounded = Math.round(result)
-  return Number.isFinite(rounded) ? rounded : null
-}
-
-function isValidVariableName(value: string): boolean {
-  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value)
-}
-
-function resolveCustomVariables(
-  variableDrafts: CustomVariableDraft[],
-  baseVariables: ExpressionVariables
-): {
-  variables: ExpressionVariables
-  errors: Record<string, string>
-} {
-  const variables: ExpressionVariables = { ...baseVariables }
-  const errors: Record<string, string> = {}
-  const draftByName = new Map<string, CustomVariableDraft>()
-
-  for (const variable of variableDrafts) {
-    const trimmedName = variable.name.trim()
-    if (!trimmedName) {
-      errors[variable.id] = 'Variable name is required'
-      continue
-    }
-    if (!isValidVariableName(trimmedName)) {
-      errors[variable.id] = 'Use letters, numbers, and underscores only'
-      continue
-    }
-    if (trimmedName in baseVariables) {
-      errors[variable.id] = 'Name conflicts with a built-in variable'
-      continue
-    }
-    if (draftByName.has(trimmedName)) {
-      errors[variable.id] = 'Variable names must be unique'
-      const existingDraft = draftByName.get(trimmedName)
-      if (existingDraft) {
-        errors[existingDraft.id] = 'Variable names must be unique'
-      }
-      continue
-    }
-    draftByName.set(trimmedName, { ...variable, name: trimmedName })
-  }
-
-  const visiting = new Set<string>()
-  const resolved = new Set<string>()
-
-  function resolveVariable(name: string): number | null {
-    if (name in baseVariables) return baseVariables[name]
-    if (resolved.has(name)) return variables[name] ?? null
-    const draft = draftByName.get(name)
-    if (!draft) return null
-    if (errors[draft.id]) return null
-    if (visiting.has(name)) {
-      errors[draft.id] = 'Circular variable reference'
-      return null
-    }
-
-    visiting.add(name)
-    const scopedVariables = new Proxy(variables, {
-      get(target, property) {
-        if (typeof property !== 'string') return undefined
-        if (property in target) return target[property]
-        const resolvedValue = resolveVariable(property)
-        return resolvedValue === null ? undefined : resolvedValue
-      },
-      has(target, property) {
-        if (typeof property !== 'string') return false
-        return property in target || draftByName.has(property)
-      },
-    }) as ExpressionVariables
-
-    const result = parseMathExpression(draft.expression, scopedVariables)
-    visiting.delete(name)
-
-    if (result === null || !Number.isFinite(result)) {
-      errors[draft.id] = 'Expression could not be resolved'
-      return null
-    }
-
-    variables[name] = result
-    resolved.add(name)
-    return result
-  }
-
-  for (const name of draftByName.keys()) {
-    resolveVariable(name)
-  }
-
-  return { variables, errors }
 }
 
 function snapToStep(value: number, step: number): number {
@@ -2401,7 +2217,10 @@ export function EditorApp() {
 
   function applyActiveShapeStyle(
     changes: Partial<
-      Pick<ShapeLayer, 'shape' | 'fillColor' | 'borderColor' | 'borderRadius' | 'opacity' | 'width' | 'height'>
+      Pick<
+        ShapeLayer,
+        'shape' | 'fillColor' | 'borderColor' | 'borderRadius' | 'opacity' | 'width' | 'height' | 'borderWidth'
+      >
     >
   ) {
     if (!documentState || !activeShape) return
@@ -3261,73 +3080,81 @@ export function EditorApp() {
                         </div>
                       )}
                       {activeShape && (
-                        <div className="space-y-3 rounded-xl border border-base-content/10 bg-base-100/40 p-3">
-                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">
-                            Shape style
-                          </div>
-                          <div className="grid grid-cols-[auto_1fr] items-center gap-3">
-                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Type</span>
-                            <select
-                              className="select select-xs"
-                              value={activeShape.shape}
+                        <>
+                          <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Type</span>
+                          <select
+                            className="select select-xs"
+                            value={activeShape.shape}
+                            onChange={event =>
+                              applyActiveShapeStyle({
+                                shape: event.target.value as ShapeType,
+                              })
+                            }
+                          >
+                            <option value="rectangle">Rectangle</option>
+                            <option value="circle">Circle</option>
+                            <option value="ellipse">Ellipse</option>
+                          </select>
+                          <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Fill</span>
+                          <input
+                            type="color"
+                            className="input input-xs h-9 w-full p-1"
+                            value={activeShape.fillColor}
+                            onChange={event => applyActiveShapeStyle({ fillColor: event.target.value })}
+                          />
+                          <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Border</span>
+                          <input
+                            type="color"
+                            className="input input-xs h-9 w-full p-1"
+                            value={activeShape.borderColor}
+                            onChange={event => applyActiveShapeStyle({ borderColor: event.target.value })}
+                          />
+                          <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Radius</span>
+                          <input
+                            type="number"
+                            min={0}
+                            className="input input-xs"
+                            value={activeShape.borderRadius}
+                            disabled={activeShape.shape !== 'rectangle'}
+                            onChange={event =>
+                              applyActiveShapeStyle({
+                                borderRadius: Math.max(0, Math.round(Number(event.target.value) || 0)),
+                              })
+                            }
+                          />
+                          <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">
+                            Border Width
+                          </span>
+                          <input
+                            type="number"
+                            min={0}
+                            className="input input-xs"
+                            value={activeShape.borderWidth}
+                            disabled={activeShape.shape !== 'rectangle'}
+                            onChange={event =>
+                              applyActiveShapeStyle({
+                                borderWidth: Math.max(0, Math.round(Number(event.target.value) || 0)),
+                              })
+                            }
+                          />
+                          <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Opacity</span>
+                          <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                            <input
+                              type="range"
+                              min="0.05"
+                              max="1"
+                              step="0.05"
+                              className="range range-xs"
+                              value={activeShape.opacity}
                               onChange={event =>
                                 applyActiveShapeStyle({
-                                  shape: event.target.value as ShapeType,
-                                })
-                              }
-                            >
-                              <option value="rectangle">Rectangle</option>
-                              <option value="circle">Circle</option>
-                              <option value="ellipse">Ellipse</option>
-                            </select>
-                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Fill</span>
-                            <input
-                              type="color"
-                              className="input input-xs h-9 w-full p-1"
-                              value={activeShape.fillColor}
-                              onChange={event => applyActiveShapeStyle({ fillColor: event.target.value })}
-                            />
-                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Border</span>
-                            <input
-                              type="color"
-                              className="input input-xs h-9 w-full p-1"
-                              value={activeShape.borderColor}
-                              onChange={event => applyActiveShapeStyle({ borderColor: event.target.value })}
-                            />
-                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Radius</span>
-                            <input
-                              type="number"
-                              min={0}
-                              className="input input-xs"
-                              value={activeShape.borderRadius}
-                              disabled={activeShape.shape !== 'rectangle'}
-                              onChange={event =>
-                                applyActiveShapeStyle({
-                                  borderRadius: Math.max(0, Math.round(Number(event.target.value) || 0)),
+                                  opacity: clampShapeOpacity(Number(event.target.value)),
                                 })
                               }
                             />
-                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">
-                              Opacity
-                            </span>
-                            <div className="grid grid-cols-[1fr_auto] items-center gap-2">
-                              <input
-                                type="range"
-                                min="0.05"
-                                max="1"
-                                step="0.05"
-                                className="range range-xs"
-                                value={activeShape.opacity}
-                                onChange={event =>
-                                  applyActiveShapeStyle({
-                                    opacity: clampShapeOpacity(Number(event.target.value)),
-                                  })
-                                }
-                              />
-                              <span className="w-10 text-right text-xs">{Math.round(activeShape.opacity * 100)}%</span>
-                            </div>
+                            <span className="w-10 text-right text-xs">{Math.round(activeShape.opacity * 100)}%</span>
                           </div>
-                        </div>
+                        </>
                       )}
                     </div>
                   ) : (
@@ -3531,6 +3358,19 @@ export function EditorApp() {
                         setShapeSettings(current => ({
                           ...current,
                           borderColor: event.target.value,
+                        }))
+                      }
+                    />
+                    <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Border Width</span>
+                    <input
+                      type="number"
+                      min={0}
+                      className="input input-xs"
+                      value={shapeSettings.borderWidth}
+                      onChange={event =>
+                        setShapeSettings(current => ({
+                          ...current,
+                          borderWidth: Math.max(0, Math.round(Number(event.target.value) || 0)),
                         }))
                       }
                     />

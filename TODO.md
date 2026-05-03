@@ -1,0 +1,4 @@
+- paste image
+- canvas background
+- zoom in/out
+- selecting and moving does not clear the actual image
