@@ -3,11 +3,7 @@ import useMeasure from 'react-use-measure'
 import {
   FolderOpenIcon,
   ImagePlusIcon,
-  MousePointer2Icon,
-  Redo2Icon,
   SaveIcon,
-  ScanLineIcon,
-  Undo2Icon,
 } from 'lucide-react'
 import { Button } from '@/lib/components/button'
 import { ContextMenu, ContextMenuList, useContextMenu } from '@/lib/components/context-menu'
@@ -23,7 +19,6 @@ import {
   EditorTool,
   HighlightLayer,
   ImageLayer,
-  NewDocumentPreset,
   PixelSelection,
   ResizeHandle,
   ShapeLayer,
@@ -109,15 +104,10 @@ import { EditorErrorDialog } from './EditorErrorDialog'
 import { SelectionSection } from './SelectionSection'
 import { DocumentSettingsSection } from './DocumentSettingsSection'
 import { ActiveLayerInspectorSection } from './ActiveLayerInspectorSection'
+import { EditorToolBarSection } from './EditorToolBarSection'
+import { EmptyProjectState } from './EmptyProjectState'
 import { ObjectsListSection } from './ObjectsListSection'
 import { VariablesSection } from './VariablesSection'
-
-const DOCUMENT_PRESETS: NewDocumentPreset[] = [
-  { label: 'Avatar', width: 512, height: 512 },
-  { label: 'Square', width: 1024, height: 1024 },
-  { label: 'Full HD', width: 1920, height: 1080 },
-  { label: 'Poster', width: 2048, height: 2048 },
-]
 
 type CanvasContextMenuItem =
   | {
@@ -1819,52 +1809,12 @@ export function EditorApp() {
       />
       <div className="flex min-h-0 flex-1">
         <aside className="flex w-80 flex-col items-start gap-3 border-r border-base-content/10 px-3 py-4">
-          <div className="flex gap-2 flex-wrap">
-            <button
-              className={cn('btn btn-square btn-sm', tool === 'select' ? 'btn-info' : 'btn-ghost')}
-              onClick={() => setTool('select')}
-              title="Select and transform objects"
-            >
-              <MousePointer2Icon className="size-4" />
-            </button>
-            <button
-              className={cn('btn btn-square btn-sm', tool === 'marquee' ? 'btn-info' : 'btn-ghost')}
-              onClick={() => setTool('marquee')}
-              title="Create a rectangular canvas selection"
-            >
-              <ScanLineIcon className="size-4" />
-            </button>
-            <button
-              className={cn('btn btn-square btn-sm', tool === 'highlight' ? 'btn-info' : 'btn-ghost')}
-              onClick={() => setTool('highlight')}
-              title="Paint highlight objects"
-            >
-              <span className="text-xs font-semibold">H</span>
-            </button>
-            <button
-              className={cn('btn btn-square btn-sm', tool === 'shape' ? 'btn-info' : 'btn-ghost')}
-              onClick={() => setTool('shape')}
-              title="Create shape objects"
-            >
-              <span className="text-xs font-semibold">S</span>
-            </button>
-            <button
-              className="btn btn-square btn-sm btn-ghost"
-              onClick={handleUndo}
-              disabled={!history.past.length}
-              title="Undo"
-            >
-              <Undo2Icon className="size-4" />
-            </button>
-            <button
-              className="btn btn-square btn-sm btn-ghost"
-              onClick={handleRedo}
-              disabled={!history.future.length}
-              title="Redo"
-            >
-              <Redo2Icon className="size-4" />
-            </button>
-          </div>
+          <EditorToolBarSection
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            canUndo={history.past.length > 0}
+            canRedo={history.future.length > 0}
+          />
           <div className="flex flex-col gap-2">
             <HighlightToolSection />
 
@@ -1958,72 +1908,11 @@ export function EditorApp() {
                 }
               }}
             >
-              {!documentState && (
-                <div className="w-full max-w-3xl rounded-3xl border border-base-content/10 bg-base-200/85 p-8 shadow-2xl backdrop-blur">
-                  <div className="mb-6">
-                    <div className="text-3xl font-semibold">Start a project</div>
-                    <p className="mt-2 max-w-xl text-sm text-base-content/70">
-                      Projects now live on disk with reusable history and image assets, so you can return to previous
-                      work and switch between saved canvases.
-                    </p>
-                  </div>
-                  {recentProjects.length > 0 && (
-                    <div className="mb-8 rounded-2xl border border-base-content/10 bg-base-100/70 p-4">
-                      <div className="mb-3 text-sm font-medium">Recent projects</div>
-                      <div className="space-y-2">
-                        {recentProjects.map(project => (
-                          <button
-                            key={project.projectPath}
-                            className="flex w-full items-start justify-between rounded-xl border border-base-content/10 bg-base-100 px-3 py-3 text-left transition hover:border-info/60 hover:bg-base-300"
-                            onClick={() => void handleOpenRecentProject(project.projectPath)}
-                          >
-                            <div className="min-w-0">
-                              <div className="truncate font-medium">{project.name}</div>
-                              <div className="truncate text-xs text-base-content/55">{project.projectPath}</div>
-                            </div>
-                            <div className="ml-3 shrink-0 text-[11px] text-base-content/45">
-                              {new Date(project.updatedAt).toLocaleDateString()}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <div className="grid gap-3 md:grid-cols-4">
-                    {DOCUMENT_PRESETS.map(preset => (
-                      <button
-                        key={preset.label}
-                        className="rounded-2xl border border-base-content/10 bg-base-100 px-4 py-5 text-left transition hover:border-info/60 hover:bg-base-300"
-                        onClick={() => createNewDocument(preset.width, preset.height)}
-                      >
-                        <div className="font-medium">{preset.label}</div>
-                        <div className="mt-1 text-sm text-base-content/65">
-                          {preset.width} x {preset.height}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="mt-8 grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
-                    <label className="form-control gap-2">
-                      <span className="label text-sm">Custom width</span>
-                      <input
-                        className="input"
-                        value={canvasDraft.width}
-                        onChange={event => setCanvasDraft(current => ({ ...current, width: event.target.value }))}
-                      />
-                    </label>
-                    <label className="form-control gap-2">
-                      <span className="label text-sm">Custom height</span>
-                      <input
-                        className="input"
-                        value={canvasDraft.height}
-                        onChange={event => setCanvasDraft(current => ({ ...current, height: event.target.value }))}
-                      />
-                    </label>
-                    <Button onClick={applyCanvasDraft}>Create canvas</Button>
-                  </div>
-                </div>
-              )}
+              <EmptyProjectState
+                onCreateNewDocument={createNewDocument}
+                onOpenRecentProject={handleOpenRecentProject}
+                onApplyCanvasDraft={applyCanvasDraft}
+              />
 
               {documentState && (
                 <div
