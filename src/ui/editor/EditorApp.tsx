@@ -21,51 +21,47 @@ import {
   EditorDocument,
   EditorLayer,
   EditorTool,
-  HighlightBrushShape,
   HighlightLayer,
-  HistoryEntry,
   ImageLayer,
   NewDocumentPreset,
   PixelSelection,
   ResizeHandle,
   ShapeLayer,
-  ShapeType,
 } from './types'
 import {
-  clampShapeOpacity,
   createShapeLayer,
   getShapeRectFromDrag,
   updateShapeLayerRect,
-  updateShapeLayerStyle,
   drawShapeLayer,
   ShapeSettingsState,
 } from './shapeUtils'
 import {
-  clampHighlightOpacity,
-  clampHighlightBrushSize,
   createHighlightLayer,
   getHighlightAbsolutePoints,
   updateHighlightLayerPoints,
-  updateHighlightLayerStyle,
   drawHighlightLayer,
   HighlightSettingsState,
 } from './highlightUtils'
 import {
   CustomVariableDraft,
-  ExpressionVariables,
   parseRoundedMathExpression,
   resolveCustomVariables,
 } from '../utils/customVariableUtils'
 import {
+  CanvasDraftState,
+  DEFAULT_EDITOR_SESSION,
   LayerPositionDraftState,
   LayerSizeDraftState,
-  SelectionDraftState,
   PasteSizeDraftState,
-  CanvasDraftState,
+  SelectionDraftState,
 } from './editorSession'
 import {
   useCanvasDraftStore,
   useCustomVariablesStore,
+  useLayerPositionDraftStore,
+  useLayerSizeDraftStore,
+  usePasteSizeDraftStore,
+  useSelectionDraftStore,
   updateImagePreviewDialogStoreValue,
   useMovementStepDraftStore,
   useMovementStepStore,
@@ -77,8 +73,22 @@ import {
   getHighlightSettingsStoreValue,
   updateErrorMessageStoreValue,
 } from './editorSimpleStores'
+import {
+  EditorHistoryState,
+  getDocumentStateStoreValue,
+  useDocumentStateStore,
+  useHistoryStore,
+} from './editorCoreStores'
+import {
+  useActiveLayerValue,
+  useNormalizedMovementStepDraftValue,
+  useNormalizedMovementStepValue,
+  useResolvedCustomVariablesValue,
+  useResolvedExpressionVariablesValue,
+  useSelectionExpressionVariablesValue,
+} from './editorDerivedValues'
+import { pendingDraftSyncRef } from './editorDraftSyncState'
 import { Accordion } from '@/lib/components/accordion'
-import { LabeledInput } from '@/lib/components/labeled-input'
 import {
   isHydratingProjectRef,
   updateHasUnsavedChangesStoreValue,
@@ -89,12 +99,12 @@ import { EditorAutoSaveEffect } from './EditorAutoSaveEffect'
 import { HighlightToolSection } from './HighlightToolSection'
 import { ImagePreviewDialog } from './ImagePreviewDialog'
 import { EditorErrorDialog } from './EditorErrorDialog'
-import { FormWithInlineApply } from './form/FormWithInlineApply'
+import { SelectionSection } from './SelectionSection'
+import { DocumentSettingsSection } from './DocumentSettingsSection'
+import { ActiveLayerInspectorSection } from './ActiveLayerInspectorSection'
+import { ObjectsListSection } from './ObjectsListSection'
 import { OneInputOneLine } from '@/lib/components/one-input-one-line'
 import { Input } from '@/lib/components/input'
-import { InputColor } from '@/lib/components/input-color'
-import { InputRange } from '@/lib/components/input-range'
-import { Select } from '@/lib/components/select'
 
 const DOCUMENT_PRESETS: NewDocumentPreset[] = [
   { label: 'Avatar', width: 512, height: 512 },
@@ -155,13 +165,6 @@ type SelectionPreview = {
   selection: PixelSelection
 }
 
-type PendingDraftSyncState = {
-  layerPosition: LayerPositionDraftState | null
-  layerSize: LayerSizeDraftState | null
-  selection: SelectionDraftState | null
-  pasteSize: PasteSizeDraftState | null
-}
-
 type CanvasContextMenuItem =
   | {
       type: 'layer'
@@ -171,46 +174,6 @@ type CanvasContextMenuItem =
       type: 'selection'
       layerId: string | null
     }
-
-type EditorSessionState = {
-  tool: EditorTool
-  canvasDraft: CanvasDraftState
-  movementStep: string
-  movementStepDraft: string
-  pasteSizeDraft: PasteSizeDraftState
-  layerPositionDraft: LayerPositionDraftState | null
-  layerSizeDraft: LayerSizeDraftState | null
-  selectionDraft: SelectionDraftState | null
-  variables: CustomVariableDraft[]
-  highlightSettings: HighlightSettingsState
-  shapeSettings: ShapeSettingsState
-}
-
-const DEFAULT_EDITOR_SESSION: EditorSessionState = {
-  tool: 'select',
-  canvasDraft: { width: '1024', height: '1024' },
-  movementStep: '1',
-  movementStepDraft: '1',
-  pasteSizeDraft: { width: '', height: '' },
-  layerPositionDraft: null,
-  layerSizeDraft: null,
-  selectionDraft: null,
-  variables: [],
-  highlightSettings: {
-    color: '#facc15',
-    opacity: 0.35,
-    brushShape: 'circle',
-    brushSize: 32,
-  },
-  shapeSettings: {
-    shape: 'rectangle',
-    fillColor: '#60a5fa',
-    borderColor: '#dbeafe',
-    borderWidth: 2,
-    borderRadius: 16,
-    opacity: 0.8,
-  },
-}
 
 function cloneLayer<T extends EditorLayer>(layer: T): T {
   if (layer.type === 'highlight') {
@@ -245,11 +208,6 @@ function createDocument(width: number, height: number): EditorDocument {
     activeLayerId: null,
     selection: null,
   }
-}
-
-function getActiveLayer(documentState: EditorDocument | null): EditorLayer | null {
-  if (!documentState?.activeLayerId) return null
-  return documentState.layers.find(layer => layer.id === documentState.activeLayerId) ?? null
 }
 
 function updateLayer(
@@ -359,36 +317,24 @@ function selectionFromDrag(documentState: EditorDocument, start: Point, current:
   return clampSelectionToDocument(normalized, documentState)
 }
 
-function formatPixels(value: number): string {
-  return `${Math.round(value)}`
-}
-
 function snapToStep(value: number, step: number): number {
   return Math.round(value / step) * step
 }
 
-function moveArrayItem<T>(items: T[], fromIndex: number, toIndex: number): T[] {
-  const nextItems = [...items]
-  const [item] = nextItems.splice(fromIndex, 1)
-  if (item === undefined) return items
-  nextItems.splice(toIndex, 0, item)
-  return nextItems
-}
-
 export function EditorApp() {
-  const [documentState, setDocumentState] = useState<EditorDocument | null>(null)
-  const [history, setHistory] = useState<{ past: HistoryEntry[]; future: HistoryEntry[] }>({ past: [], future: [] })
+  const [documentState, setDocumentState] = useDocumentStateStore()
+  const [history, setHistory] = useHistoryStore()
   const [tool, setTool] = useToolStore()
   const [interaction, setInteraction] = useState<InteractionState>(null)
   const [selectionPreview, setSelectionPreview] = useState<SelectionPreview | null>(null)
   const [canvasDraft, setCanvasDraft] = useCanvasDraftStore()
-  const [pasteSizeDraft, setPasteSizeDraft] = useState<PasteSizeDraftState>({ width: '', height: '' })
+  const [pasteSizeDraft, setPasteSizeDraft] = usePasteSizeDraftStore()
   const [movementStep, setMovementStep] = useMovementStepStore()
   const [movementStepDraft, setMovementStepDraft] = useMovementStepDraftStore()
   const [customVariables, setCustomVariables] = useCustomVariablesStore()
-  const [layerPositionDraft, setLayerPositionDraft] = useState<LayerPositionDraftState | null>(null)
-  const [layerSizeDraft, setLayerSizeDraft] = useState<LayerSizeDraftState | null>(null)
-  const [selectionDraft, setSelectionDraft] = useState<SelectionDraftState | null>(null)
+  const [layerPositionDraft, setLayerPositionDraft] = useLayerPositionDraftStore()
+  const [layerSizeDraft, setLayerSizeDraft] = useLayerSizeDraftStore()
+  const [selectionDraft, setSelectionDraft] = useSelectionDraftStore()
   const [projectNameDraft, setProjectNameDraft] = useProjectNameDraftStore()
   const [isSaving, setIsSaving] = useState(false)
   const [isProjectSaving, setIsProjectSaving] = useState(false)
@@ -400,57 +346,19 @@ export function EditorApp() {
   const inputRef = useRef<HTMLInputElement>(null)
   const mainCanvasRef = useRef<HTMLCanvasElement>(null)
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null)
-  const documentStateRef = useRef<EditorDocument | null>(null)
   const imageCacheRef = useRef(new Map<string, HTMLImageElement>())
-  const pendingDraftSyncRef = useRef<PendingDraftSyncState>({
-    layerPosition: null,
-    layerSize: null,
-    selection: null,
-    pasteSize: null,
-  })
   const [imageRevision, setImageRevision] = useState(0)
 
-  const activeLayer = useMemo(() => getActiveLayer(documentState), [documentState])
-  const activeHighlight = activeLayer && isHighlightLayer(activeLayer) ? activeLayer : null
-  const activeShape = activeLayer && isShapeLayer(activeLayer) ? activeLayer : null
-  const canvasExpressionVariables = useMemo<ExpressionVariables>(
-    () => ({
-      canvasWidth: documentState?.width ?? 0,
-      canvasHeight: documentState?.height ?? 0,
-    }),
-    [documentState?.height, documentState?.width]
-  )
-  const resolvedCustomVariables = useMemo(
-    () => resolveCustomVariables(customVariables, canvasExpressionVariables),
-    [canvasExpressionVariables, customVariables]
-  )
-  const resolvedExpressionVariables = resolvedCustomVariables.variables
-  const activeLayerExpressionVariables = useMemo<ExpressionVariables>(
-    () => ({
-      ...resolvedExpressionVariables,
-      imageX: activeLayer?.x ?? 0,
-      imageY: activeLayer?.y ?? 0,
-      imageWidth: activeLayer?.width ?? 0,
-      imageHeight: activeLayer?.height ?? 0,
-    }),
-    [activeLayer, resolvedExpressionVariables]
-  )
-  const selectionExpressionVariables = useMemo<ExpressionVariables>(
-    () => ({
-      ...resolvedExpressionVariables,
-      selectionX: documentState?.selection?.x ?? 0,
-      selectionY: documentState?.selection?.y ?? 0,
-      selectionWidth: documentState?.selection?.width ?? 0,
-      selectionHeight: documentState?.selection?.height ?? 0,
-    }),
-    [documentState?.selection, resolvedExpressionVariables]
-  )
+  const activeLayer = useActiveLayerValue()
+  const resolvedCustomVariables = useResolvedCustomVariablesValue()
+  const resolvedExpressionVariables = useResolvedExpressionVariablesValue()
+  const selectionExpressionVariables = useSelectionExpressionVariablesValue()
 
   function applyProjectState(args: {
     nextProjectPath: string | null
     nextProjectName: string
     nextDocumentState: EditorDocument | null
-    nextHistory: { past: HistoryEntry[]; future: HistoryEntry[] }
+    nextHistory: EditorHistoryState
     nextTool: EditorTool
     nextCanvasDraft: CanvasDraftState
     nextMovementStep: string
@@ -889,10 +797,6 @@ export function EditorApp() {
   }
 
   useEffect(() => {
-    documentStateRef.current = documentState
-  }, [documentState])
-
-  useEffect(() => {
     void refreshRecentProjects()
 
     if (windowArgs.initialPath) {
@@ -1008,14 +912,8 @@ export function EditorApp() {
     })
   }, [documentState?.pasteHeight, documentState?.pasteWidth])
 
-  const normalizedMovementStep = useMemo(
-    () => Math.max(1, parseRoundedMathExpression(movementStep, resolvedExpressionVariables) ?? 1),
-    [movementStep, resolvedExpressionVariables]
-  )
-  const normalizedMovementStepDraft = useMemo(
-    () => Math.max(1, parseRoundedMathExpression(movementStepDraft, resolvedExpressionVariables) ?? 1),
-    [movementStepDraft, resolvedExpressionVariables]
-  )
+  const normalizedMovementStep = useNormalizedMovementStepValue()
+  const normalizedMovementStepDraft = useNormalizedMovementStepDraftValue()
 
   const viewportScale = useMemo(() => {
     if (!documentState) return 1
@@ -1248,25 +1146,9 @@ export function EditorApp() {
     pushHistory('Delete object', documentState, nextDocument)
   }
 
-  function moveLayer(layerId: string, direction: 'up' | 'down') {
-    if (!documentState) return
-    const currentIndex = documentState.layers.findIndex(layer => layer.id === layerId)
-    if (currentIndex === -1) return
-
-    const targetIndex = direction === 'up' ? currentIndex + 1 : currentIndex - 1
-    if (targetIndex < 0 || targetIndex >= documentState.layers.length) return
-
-    const nextDocument: EditorDocument = {
-      ...documentState,
-      layers: moveArrayItem(documentState.layers, currentIndex, targetIndex),
-    }
-
-    pushHistory(direction === 'up' ? 'Move layer up' : 'Move layer down', documentState, nextDocument)
-  }
-
   function handleUndo() {
     setHistory(currentHistory => {
-      const currentDocumentState = documentStateRef.current
+      const currentDocumentState = getDocumentStateStoreValue()
       const previousEntry = currentHistory.past[currentHistory.past.length - 1]
       if (!previousEntry || !currentDocumentState) return currentHistory
       setDocumentState(previousEntry.document)
@@ -1284,7 +1166,7 @@ export function EditorApp() {
 
   function handleRedo() {
     setHistory(currentHistory => {
-      const currentDocumentState = documentStateRef.current
+      const currentDocumentState = getDocumentStateStoreValue()
       const [nextEntry, ...remainingFuture] = currentHistory.future
       if (!nextEntry || !currentDocumentState) return currentHistory
       setDocumentState(nextEntry.document)
@@ -1773,94 +1655,6 @@ export function EditorApp() {
     })
   }
 
-  function applyInspectorPosition() {
-    if (!documentState || !activeLayer || !layerPositionDraft || layerPositionDraft.layerId !== activeLayer.id) return
-
-    const parsedX = parseRoundedMathExpression(layerPositionDraft.x, activeLayerExpressionVariables)
-    const parsedY = parseRoundedMathExpression(layerPositionDraft.y, activeLayerExpressionVariables)
-    const x = snapToStep(parsedX ?? Number.NaN, normalizedMovementStep)
-    const y = snapToStep(parsedY ?? Number.NaN, normalizedMovementStep)
-    if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      updateErrorMessageStoreValue('Position coordinates must be valid numbers or simple math expressions')
-      return
-    }
-
-    const nextDocument = updateLayer(documentState, activeLayer.id, layer => ({
-      ...layer,
-      x,
-      y,
-    }))
-
-    pendingDraftSyncRef.current.layerPosition = layerPositionDraft
-    pushHistory('Set exact position', documentState, nextDocument)
-  }
-
-  function applyInspectorSize() {
-    if (!documentState || !activeLayer || !layerSizeDraft || layerSizeDraft.layerId !== activeLayer.id) return
-    if (isHighlightLayer(activeLayer)) return
-
-    let width = Math.max(
-      1,
-      parseRoundedMathExpression(layerSizeDraft.width, activeLayerExpressionVariables) ?? Number.NaN
-    )
-    let height = Math.max(
-      1,
-      parseRoundedMathExpression(layerSizeDraft.height, activeLayerExpressionVariables) ?? Number.NaN
-    )
-    if (
-      isShapeLayer(activeLayer) &&
-      Number.isFinite(width) &&
-      Number.isFinite(height) &&
-      activeLayer.shape === 'circle'
-    ) {
-      const size = Math.max(width, height)
-      width = size
-      height = size
-    }
-    if (!Number.isFinite(width) || !Number.isFinite(height)) {
-      updateErrorMessageStoreValue('Width and height must be valid numbers or simple math expressions')
-      return
-    }
-
-    const nextDocument = updateLayer(documentState, activeLayer.id, layer => ({
-      ...layer,
-      width,
-      height,
-    }))
-
-    pendingDraftSyncRef.current.layerSize = layerSizeDraft
-    pushHistory('Set exact size', documentState, nextDocument)
-  }
-
-  function applyActiveHighlightStyle(
-    changes: Partial<Pick<HighlightLayer, 'color' | 'opacity' | 'brushShape' | 'brushSize'>>
-  ) {
-    if (!documentState || !activeHighlight) return
-    const nextDocument = updateLayer(documentState, activeHighlight.id, layer => {
-      if (!isHighlightLayer(layer)) return layer
-      return updateHighlightLayerStyle(layer, changes)
-    })
-    if (documentsEqual(documentState, nextDocument)) return
-    pushHistory('Update highlight', documentState, nextDocument)
-  }
-
-  function applyActiveShapeStyle(
-    changes: Partial<
-      Pick<
-        ShapeLayer,
-        'shape' | 'fillColor' | 'borderColor' | 'borderRadius' | 'opacity' | 'width' | 'height' | 'borderWidth'
-      >
-    >
-  ) {
-    if (!documentState || !activeShape) return
-    const nextDocument = updateLayer(documentState, activeShape.id, layer => {
-      if (!isShapeLayer(layer)) return layer
-      return updateShapeLayerStyle(layer, changes)
-    })
-    if (documentsEqual(documentState, nextDocument)) return
-    pushHistory('Update shape', documentState, nextDocument)
-  }
-
   function applySelectionPosition() {
     if (!documentState || !documentState.selection || !selectionDraft) return
 
@@ -2010,27 +1804,6 @@ export function EditorApp() {
     }
   }
 
-  const isInspectorPositionUnchanged =
-    !!activeLayer &&
-    !!layerPositionDraft &&
-    layerPositionDraft.layerId === activeLayer.id &&
-    snapToStep(
-      parseRoundedMathExpression(layerPositionDraft.x, activeLayerExpressionVariables) ?? Number.NaN,
-      normalizedMovementStep
-    ) === Math.round(activeLayer.x) &&
-    snapToStep(
-      parseRoundedMathExpression(layerPositionDraft.y, activeLayerExpressionVariables) ?? Number.NaN,
-      normalizedMovementStep
-    ) === Math.round(activeLayer.y)
-
-  const isInspectorSizeUnchanged =
-    !!activeLayer &&
-    !!layerSizeDraft &&
-    layerSizeDraft.layerId === activeLayer.id &&
-    parseRoundedMathExpression(layerSizeDraft.width, activeLayerExpressionVariables) ===
-      Math.round(activeLayer.width) &&
-    parseRoundedMathExpression(layerSizeDraft.height, activeLayerExpressionVariables) === Math.round(activeLayer.height)
-
   const isSelectionPositionUnchanged =
     !!documentState?.selection &&
     !!selectionDraft &&
@@ -2110,16 +1883,10 @@ export function EditorApp() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-base-100 text-base-content">
       <EditorAutoSaveEffect
-        documentState={documentState}
-        history={history}
         interactionActive={interaction !== null}
-        layerPositionDraft={layerPositionDraft}
-        layerSizeDraft={layerSizeDraft}
-        pasteSizeDraft={pasteSizeDraft}
         projectName={projectName}
         projectPath={projectPath}
         saveProjectToPath={saveProjectToPath}
-        selectionDraft={selectionDraft}
       />
       <div className="flex min-h-0 flex-1">
         <aside className="flex w-80 flex-col items-start gap-3 border-r border-base-content/10 px-3 py-4">
@@ -2175,71 +1942,15 @@ export function EditorApp() {
             <ShapeToolSection />
 
             {documentState?.selection && selectionDraft && (
-              <section>
-                <Accordion title="Selection" defaultOpen>
-                  <div className="space-y-3 bg-base-200/60 text-sm text-base-content/70">
-                    <div className="space-y-3">
-                      <div className="flex">
-                        <Button
-                          className="btn-xs btn-soft flex-1 rounded-none"
-                          onClick={() => void copySelectionToClipboard()}
-                        >
-                          Copy
-                        </Button>
-                        <Button
-                          className="btn-xs btn-soft flex-1 rounded-none"
-                          onClick={() => void saveSelectionImage()}
-                          disabled={isSaving}
-                        >
-                          Save PNG
-                        </Button>
-                      </div>
-
-                      <FormWithInlineApply
-                        label="Position"
-                        onSubmit={applySelectionPosition}
-                        disabled={isSelectionPositionUnchanged}
-                      >
-                        <LabeledInput
-                          label="X"
-                          value={selectionDraft.x}
-                          onChange={event =>
-                            setSelectionDraft(current => (current ? { ...current, x: event } : current))
-                          }
-                        />
-                        <LabeledInput
-                          label="Y"
-                          value={selectionDraft.y}
-                          onChange={event =>
-                            setSelectionDraft(current => (current ? { ...current, y: event } : current))
-                          }
-                        />
-                      </FormWithInlineApply>
-
-                      <FormWithInlineApply
-                        label="Exact Size"
-                        onSubmit={applySelectionSize}
-                        disabled={isSelectionSizeUnchanged}
-                      >
-                        <LabeledInput
-                          label="W"
-                          value={selectionDraft.width}
-                          onChange={event =>
-                            setSelectionDraft(current => (current ? { ...current, width: event } : current))
-                          }
-                        />
-                        <LabeledInput
-                          label="H"
-                          value={selectionDraft.height}
-                          onChange={event =>
-                            setSelectionDraft(current => (current ? { ...current, height: event } : current))
-                          }
-                        />
-                      </FormWithInlineApply>
-                    </div>
-                  </div>
-                </Accordion>
-              </section>
+              <SelectionSection
+                canApplyPosition={!isSelectionPositionUnchanged}
+                canApplySize={!isSelectionSizeUnchanged}
+                onApplyPosition={applySelectionPosition}
+                onApplySize={applySelectionSize}
+                onCopy={() => void copySelectionToClipboard()}
+                onSavePng={() => void saveSelectionImage()}
+                isSaving={isSaving}
+              />
             )}
             <section>
               <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">History</div>
@@ -2510,252 +2221,27 @@ export function EditorApp() {
               </section>
 
               {documentState && (
-                <section>
-                  <Accordion title="Document Settings" defaultOpen>
-                    <div className="space-y-3 bg-base-200/60 text-sm text-base-content/70">
-                      <FormWithInlineApply
-                        label="Canvs Size"
-                        onSubmit={applyCanvasDraft}
-                        disabled={
-                          parseRoundedMathExpression(canvasDraft.width, resolvedExpressionVariables) ===
-                            documentState.width &&
-                          parseRoundedMathExpression(canvasDraft.height, resolvedExpressionVariables) ===
-                            documentState.height
-                        }
-                      >
-                        <LabeledInput
-                          label="W"
-                          value={canvasDraft.width}
-                          onChange={v => setCanvasDraft(current => ({ ...current, width: v }))}
-                        />
-                        <LabeledInput
-                          label="H"
-                          value={canvasDraft.height}
-                          onChange={v => setCanvasDraft(current => ({ ...current, height: v }))}
-                        />
-                      </FormWithInlineApply>
-
-                      <FormWithInlineApply
-                        label="Paste Size"
-                        onSubmit={() => applyPasteSize(pasteSizeDraft.width, pasteSizeDraft.height)}
-                        disabled={
-                          (pasteSizeDraft.width.trim().length
-                            ? Math.max(
-                                1,
-                                parseRoundedMathExpression(pasteSizeDraft.width, resolvedExpressionVariables) ??
-                                  Number.NaN
-                              )
-                            : null) === documentState.pasteWidth &&
-                          (pasteSizeDraft.height.trim().length
-                            ? Math.max(
-                                1,
-                                parseRoundedMathExpression(pasteSizeDraft.height, resolvedExpressionVariables) ??
-                                  Number.NaN
-                              )
-                            : null) === documentState.pasteHeight
-                        }
-                      >
-                        <LabeledInput
-                          label="W"
-                          value={pasteSizeDraft.width}
-                          onChange={v => setPasteSizeDraft(current => ({ ...current, width: v }))}
-                        />
-                        <LabeledInput
-                          label="H"
-                          value={pasteSizeDraft.height}
-                          onChange={v => setPasteSizeDraft(current => ({ ...current, height: v }))}
-                        />
-                      </FormWithInlineApply>
-                      <FormWithInlineApply
-                        label="Move Step"
-                        onSubmit={applyMovementStep}
-                        disabled={movementStep === String(normalizedMovementStepDraft)}
-                      >
-                        <LabeledInput label="PX" value={movementStepDraft} onChange={v => setMovementStepDraft(v)} />
-                      </FormWithInlineApply>
-                    </div>
-                  </Accordion>
-                </section>
+                <DocumentSettingsSection
+                  isCanvasSizeUnchanged={
+                    parseRoundedMathExpression(canvasDraft.width, resolvedExpressionVariables) === documentState.width &&
+                    parseRoundedMathExpression(canvasDraft.height, resolvedExpressionVariables) === documentState.height
+                  }
+                  isPasteSizeUnchanged={
+                    (pasteSizeDraft.width.trim().length
+                      ? Math.max(1, parseRoundedMathExpression(pasteSizeDraft.width, resolvedExpressionVariables) ?? Number.NaN)
+                      : null) === documentState.pasteWidth &&
+                    (pasteSizeDraft.height.trim().length
+                      ? Math.max(1, parseRoundedMathExpression(pasteSizeDraft.height, resolvedExpressionVariables) ?? Number.NaN)
+                      : null) === documentState.pasteHeight
+                  }
+                  isMovementStepUnchanged={movementStep === String(normalizedMovementStepDraft)}
+                  onApplyCanvasDraft={applyCanvasDraft}
+                  onApplyPasteSize={() => applyPasteSize(pasteSizeDraft.width, pasteSizeDraft.height)}
+                  onApplyMovementStep={applyMovementStep}
+                />
               )}
 
-              {activeLayer && (
-                <section>
-                  <Accordion title={`Active - ${activeLayer.name}`} defaultOpen>
-                    <div className="space-y-3 bg-base-200/60 text-sm text-base-content/70">
-                      <div className="flex gap-2 text-xs">
-                        {isImageLayer(activeLayer) && (
-                          <div>
-                            Raster size: {formatPixels(activeLayer.pixelWidth)}x{formatPixels(activeLayer.pixelHeight)}
-                          </div>
-                        )}
-                      </div>
-                      {layerPositionDraft && layerPositionDraft.layerId === activeLayer.id && (
-                        <FormWithInlineApply
-                          label="Position"
-                          onSubmit={applyInspectorPosition}
-                          disabled={isInspectorPositionUnchanged}
-                        >
-                          <LabeledInput
-                            label="X"
-                            value={layerPositionDraft.x}
-                            onChange={event =>
-                              setLayerPositionDraft(current => (current ? { ...current, x: event } : current))
-                            }
-                          />
-                          <LabeledInput
-                            label="Y"
-                            value={layerPositionDraft.y}
-                            onChange={event =>
-                              setLayerPositionDraft(current => (current ? { ...current, y: event } : current))
-                            }
-                          />
-                        </FormWithInlineApply>
-                      )}
-                      {!isHighlightLayer(activeLayer) &&
-                        layerSizeDraft &&
-                        layerSizeDraft.layerId === activeLayer.id && (
-                          <FormWithInlineApply
-                            label="Exact Size"
-                            onSubmit={applyInspectorSize}
-                            disabled={isInspectorSizeUnchanged}
-                          >
-                            <LabeledInput
-                              label="W"
-                              value={layerSizeDraft.width}
-                              onChange={event =>
-                                setLayerSizeDraft(current => (current ? { ...current, width: event } : current))
-                              }
-                            />
-                            <LabeledInput
-                              label="H"
-                              value={layerSizeDraft.height}
-                              onChange={event =>
-                                setLayerSizeDraft(current => (current ? { ...current, height: event } : current))
-                              }
-                            />
-                          </FormWithInlineApply>
-                        )}
-                      {activeHighlight && (
-                        <>
-                          <OneInputOneLine label="Color">
-                            <InputColor
-                              value={activeHighlight.color}
-                              onChange={value => applyActiveHighlightStyle({ color: value })}
-                            />
-                          </OneInputOneLine>
-                          <OneInputOneLine label="Opacity">
-                            <InputRange
-                              value={activeHighlight.opacity}
-                              onChange={value =>
-                                applyActiveHighlightStyle({
-                                  opacity: clampHighlightOpacity(Number(value)),
-                                })
-                              }
-                            />
-                          </OneInputOneLine>
-                          <OneInputOneLine label="Brush">
-                            <Select
-                              options={[
-                                { label: 'Circle', value: 'circle' },
-                                { label: 'Square', value: 'square' },
-                              ]}
-                              value={activeHighlight.brushShape}
-                              onChange={value =>
-                                applyActiveHighlightStyle({
-                                  brushShape: value as HighlightBrushShape,
-                                })
-                              }
-                            />
-                          </OneInputOneLine>
-                          <OneInputOneLine label="Size">
-                            <Input
-                              type="number"
-                              min={4}
-                              max={256}
-                              className="input input-xs"
-                              value={activeHighlight.brushSize}
-                              onChange={value =>
-                                applyActiveHighlightStyle({
-                                  brushSize: clampHighlightBrushSize(Number(value) || activeHighlight.brushSize),
-                                })
-                              }
-                            />
-                          </OneInputOneLine>
-                        </>
-                      )}
-                      {activeShape && (
-                        <>
-                          <OneInputOneLine label="Type">
-                            <Select
-                              options={[
-                                { label: 'Rectangle', value: 'rectangle' },
-                                { label: 'Circle', value: 'circle' },
-                                { label: 'Ellipse', value: 'ellipse' },
-                              ]}
-                              value={activeShape.shape}
-                              onChange={value =>
-                                applyActiveShapeStyle({
-                                  shape: value as ShapeType,
-                                })
-                              }
-                            />
-                          </OneInputOneLine>
-                          <OneInputOneLine label="Fill">
-                            <InputColor
-                              value={activeShape.fillColor}
-                              onChange={value => applyActiveShapeStyle({ fillColor: value })}
-                            />
-                          </OneInputOneLine>
-                          <OneInputOneLine label="Border">
-                            <InputColor
-                              value={activeShape.borderColor}
-                              onChange={value => applyActiveShapeStyle({ borderColor: value })}
-                            />
-                          </OneInputOneLine>
-                          <OneInputOneLine label="Radius">
-                            <Input
-                              type="number"
-                              min={0}
-                              className="input input-xs"
-                              value={activeShape.borderRadius}
-                              disabled={activeShape.shape !== 'rectangle'}
-                              onChange={value =>
-                                applyActiveShapeStyle({
-                                  borderRadius: Math.max(0, Math.round(Number(value) || 0)),
-                                })
-                              }
-                            />
-                          </OneInputOneLine>
-                          <OneInputOneLine label="Border Width">
-                            <Input
-                              type="number"
-                              min={0}
-                              className="input input-xs"
-                              value={activeShape.borderWidth}
-                              disabled={activeShape.shape !== 'rectangle'}
-                              onChange={value =>
-                                applyActiveShapeStyle({
-                                  borderWidth: Math.max(0, Math.round(Number(value) || 0)),
-                                })
-                              }
-                            />
-                          </OneInputOneLine>
-                          <OneInputOneLine label="Opacity">
-                            <InputRange
-                              value={activeShape.opacity}
-                              onChange={value =>
-                                applyActiveShapeStyle({
-                                  opacity: clampShapeOpacity(Number(value)),
-                                })
-                              }
-                            />
-                          </OneInputOneLine>
-                        </>
-                      )}
-                    </div>
-                  </Accordion>
-                </section>
-              )}
+              <ActiveLayerInspectorSection />
 
               <section>
                 <Accordion title="Variables" defaultOpen>
@@ -2829,80 +2315,7 @@ export function EditorApp() {
                 </Accordion>
               </section>
 
-              <section>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
-                  Objects
-                </div>
-                <div className="rounded-2xl border border-base-content/10 bg-base-200/60 p-3 text-sm text-base-content/70">
-                  {documentState && documentState.layers.length > 0 ? (
-                    <div className="space-y-2">
-                      <div className="text-xs text-base-content/55">
-                        Top to bottom order. Use the arrows to change stacking.
-                      </div>
-                      {[...documentState.layers].reverse().map(layer => {
-                        const originalIndex = documentState.layers.findIndex(
-                          currentLayer => currentLayer.id === layer.id
-                        )
-                        const canMoveUp = originalIndex < documentState.layers.length - 1
-                        const canMoveDown = originalIndex > 0
-                        const isActive = activeLayer?.id === layer.id
-
-                        return (
-                          <div
-                            key={layer.id}
-                            className={cn(
-                              'flex items-center gap-2 rounded-xl border px-2 py-2',
-                              isActive ? 'border-info/60 bg-info/10' : 'border-base-content/10 bg-base-100/40'
-                            )}
-                          >
-                            <button
-                              className={cn(
-                                'min-w-0 flex-1 text-left text-sm',
-                                isActive ? 'text-base-content' : 'text-base-content/75'
-                              )}
-                              onClick={() =>
-                                setDocumentState(current =>
-                                  current ? { ...current, activeLayerId: layer.id } : current
-                                )
-                              }
-                            >
-                              <div className="truncate font-medium">{layer.name}</div>
-                              <div className="text-[11px] uppercase tracking-[0.14em] text-base-content/45">
-                                {layer.type}
-                              </div>
-                            </button>
-                            <button
-                              className="btn btn-xs btn-ghost"
-                              onClick={() => moveLayer(layer.id, 'up')}
-                              disabled={!canMoveUp}
-                              title="Move toward front"
-                            >
-                              ↑
-                            </button>
-                            <button
-                              className="btn btn-xs btn-ghost"
-                              onClick={() => moveLayer(layer.id, 'down')}
-                              disabled={!canMoveDown}
-                              title="Move toward back"
-                            >
-                              ↓
-                            </button>
-                            <button
-                              className="btn btn-xs btn-ghost text-error"
-                              onClick={() => deleteLayer(layer.id)}
-                              title="Delete object"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <div>No objects yet.</div>
-                  )}
-                </div>
-              </section>
+              <ObjectsListSection />
             </aside>
           </div>
 

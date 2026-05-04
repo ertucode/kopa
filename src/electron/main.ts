@@ -87,6 +87,8 @@ app.on('ready', () => {
         if (windows[0]) {
           windows[0].show()
           windows[0].focus()
+        } else {
+          createWindow()
         }
       }
     })

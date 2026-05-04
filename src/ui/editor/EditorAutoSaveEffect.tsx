@@ -1,47 +1,44 @@
 import { useEffect, useEffectEvent } from 'react'
-import { LayerPositionDraftState, LayerSizeDraftState, PasteSizeDraftState, SelectionDraftState } from './editorSession'
+import { useDocumentStateStoreValue, useHistoryStoreValue } from './editorCoreStores'
 import { autosaveTimeoutRef, isHydratingProjectRef, updateHasUnsavedChangesStoreValue } from './editorPersistenceState'
 import {
   useCanvasDraftStoreValue,
   useCustomVariablesStoreValue,
   useHighlightSettingsStoreValue,
+  useLayerPositionDraftStoreValue,
+  useLayerSizeDraftStoreValue,
   useMovementStepStoreValue,
+  usePasteSizeDraftStoreValue,
+  useSelectionDraftStoreValue,
   useShapeSettingsStoreValue,
   useToolStoreValue,
 } from './editorSimpleStores'
-import { EditorDocument, HistoryEntry } from './types'
 
 type EditorAutoSaveEffectProps = {
-  documentState: EditorDocument | null
-  history: { past: HistoryEntry[]; future: HistoryEntry[] }
   interactionActive: boolean
-  layerPositionDraft: LayerPositionDraftState | null
-  layerSizeDraft: LayerSizeDraftState | null
-  pasteSizeDraft: PasteSizeDraftState
   projectName: string
   projectPath: string | null
   saveProjectToPath: (projectPath: string) => Promise<void>
-  selectionDraft: SelectionDraftState | null
 }
 
 export function EditorAutoSaveEffect({
-  documentState,
-  history,
   interactionActive,
-  layerPositionDraft,
-  layerSizeDraft,
-  pasteSizeDraft,
   projectName,
   projectPath,
   saveProjectToPath,
-  selectionDraft,
 }: EditorAutoSaveEffectProps) {
+  const documentState = useDocumentStateStoreValue()
+  const history = useHistoryStoreValue()
   const movementStep = useMovementStepStoreValue()
   const tool = useToolStoreValue()
   const shapeSettings = useShapeSettingsStoreValue()
   const canvasDraft = useCanvasDraftStoreValue()
   const customVariables = useCustomVariablesStoreValue()
   const highlightSettings = useHighlightSettingsStoreValue()
+  const layerPositionDraft = useLayerPositionDraftStoreValue()
+  const layerSizeDraft = useLayerSizeDraftStoreValue()
+  const pasteSizeDraft = usePasteSizeDraftStoreValue()
+  const selectionDraft = useSelectionDraftStoreValue()
   const saveProject = useEffectEvent((nextProjectPath: string) => {
     void saveProjectToPath(nextProjectPath)
   })

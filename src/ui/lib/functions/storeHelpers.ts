@@ -61,7 +61,7 @@ export function createUseDerivedStoreValue<const Stores extends readonly AnyStor
   selector: (contexts: ContextsOf<Stores>) => readonly any[],
   fn: (contexts: ContextsOf<Stores>) => TDerivedValue
 ) {
-  let lastValue: TDerivedValue | undefined
+  let lastValue = fn(stores.map(store => store.getSnapshot().context) as ContextsOf<Stores>)
 
   const subscriptions = new Set<() => void>()
 

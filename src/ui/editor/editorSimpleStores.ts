@@ -44,6 +44,38 @@ export const {
   getProjectNameDraftStoreValue,
 } = createSimpleStore({ value: 'Untitled Project' }, 'ProjectNameDraft')
 
+export const {
+  PasteSizeDraftStore,
+  updatePasteSizeDraftStoreValue,
+  usePasteSizeDraftStore,
+  usePasteSizeDraftStoreValue,
+  getPasteSizeDraftStoreValue,
+} = createSimpleStore(DEFAULT_EDITOR_SESSION.pasteSizeDraft, 'PasteSizeDraft')
+
+export const {
+  LayerPositionDraftStore,
+  updateLayerPositionDraftStoreValue,
+  useLayerPositionDraftStore,
+  useLayerPositionDraftStoreValue,
+  getLayerPositionDraftStoreValue,
+} = createSimpleStore(DEFAULT_EDITOR_SESSION.layerPositionDraft, 'LayerPositionDraft')
+
+export const {
+  LayerSizeDraftStore,
+  updateLayerSizeDraftStoreValue,
+  useLayerSizeDraftStore,
+  useLayerSizeDraftStoreValue,
+  getLayerSizeDraftStoreValue,
+} = createSimpleStore(DEFAULT_EDITOR_SESSION.layerSizeDraft, 'LayerSizeDraft')
+
+export const {
+  SelectionDraftStore,
+  updateSelectionDraftStoreValue,
+  useSelectionDraftStore,
+  useSelectionDraftStoreValue,
+  getSelectionDraftStoreValue,
+} = createSimpleStore(DEFAULT_EDITOR_SESSION.selectionDraft, 'SelectionDraft')
+
 export const { ErrorMessageStore, updateErrorMessageStoreValue, useErrorMessageStore, useErrorMessageStoreValue } =
   createSimpleStore<string | null, 'ErrorMessage'>(null, 'ErrorMessage')
 
