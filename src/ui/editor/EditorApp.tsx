@@ -71,7 +71,14 @@ import {
   PasteSizeDraftState,
   CanvasDraftState,
 } from './editorSession'
-import { useToolStore } from './editorSimpleStores'
+import {
+  useCanvasDraftStore,
+  useHighlightSettingsStore,
+  useMovementStepDraftStore,
+  useMovementStepStore,
+  useShapeSettingsStore,
+  useToolStore,
+} from './editorSimpleStores'
 import { Typescript } from '@common/Typescript'
 import { Accordion } from '@/lib/components/accordion'
 import { Select } from '@/lib/components/select'
@@ -402,15 +409,13 @@ export function EditorApp() {
   const [sizeDialog, setSizeDialog] = useState<SizeDialogState | null>(null)
   const [positionDialog, setPositionDialog] = useState<PositionDialogState | null>(null)
   const [imagePreviewDialog, setImagePreviewDialog] = useState<ImagePreviewDialogState | null>(null)
-  const [canvasDraft, setCanvasDraft] = useState<CanvasDraftState>(DEFAULT_EDITOR_SESSION.canvasDraft)
+  const [canvasDraft, setCanvasDraft] = useCanvasDraftStore()
   const [pasteSizeDraft, setPasteSizeDraft] = useState<PasteSizeDraftState>({ width: '', height: '' })
-  const [movementStep, setMovementStep] = useState(DEFAULT_EDITOR_SESSION.movementStep)
-  const [movementStepDraft, setMovementStepDraft] = useState(DEFAULT_EDITOR_SESSION.movementStep)
+  const [movementStep, setMovementStep] = useMovementStepStore()
+  const [movementStepDraft, setMovementStepDraft] = useMovementStepDraftStore()
   const [customVariables, setCustomVariables] = useState<CustomVariableDraft[]>(DEFAULT_EDITOR_SESSION.variables)
-  const [highlightSettings, setHighlightSettings] = useState<HighlightSettingsState>(
-    DEFAULT_EDITOR_SESSION.highlightSettings
-  )
-  const [shapeSettings, setShapeSettings] = useState<ShapeSettingsState>(DEFAULT_EDITOR_SESSION.shapeSettings)
+  const [highlightSettings, setHighlightSettings] = useHighlightSettingsStore()
+  const [shapeSettings, setShapeSettings] = useShapeSettingsStore()
   const [layerPositionDraft, setLayerPositionDraft] = useState<LayerPositionDraftState | null>(null)
   const [layerSizeDraft, setLayerSizeDraft] = useState<LayerSizeDraftState | null>(null)
   const [selectionDraft, setSelectionDraft] = useState<SelectionDraftState | null>(null)
