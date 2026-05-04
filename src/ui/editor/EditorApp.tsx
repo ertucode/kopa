@@ -75,19 +75,17 @@ import {
   useCanvasDraftStore,
   useCustomVariablesStore,
   useErrorMessageStore,
-  useHighlightSettingsStore,
   useMovementStepDraftStore,
   useMovementStepStore,
   useProjectNameDraftStore,
-  ShapeSettingsStore,
   useToolStore,
   updateShapeSettingsStoreValue,
+  updateHighlightSettingsStoreValue,
+  getShapeSettingsStoreValue,
+  getHighlightSettingsStoreValue,
 } from './editorSimpleStores'
 import { Typescript } from '@common/Typescript'
 import { Accordion } from '@/lib/components/accordion'
-import { Select } from '@/lib/components/select'
-import { InputColor } from '@/lib/components/input-color'
-import { Input } from '@/lib/components/input'
 import { Label } from '@/lib/components/label'
 import { LabeledInput } from '@/lib/components/labeled-input'
 import {
@@ -97,6 +95,7 @@ import {
 } from './editorPersistenceState'
 import { ShapeToolSection } from './ShapeToolSection'
 import { EditorAutoSaveEffect } from './EditorAutoSaveEffect'
+import { HighlightToolSection } from './HighlightToolSection'
 
 const DOCUMENT_PRESETS: NewDocumentPreset[] = [
   { label: 'Avatar', width: 512, height: 512 },
@@ -420,7 +419,6 @@ export function EditorApp() {
   const [movementStep, setMovementStep] = useMovementStepStore()
   const [movementStepDraft, setMovementStepDraft] = useMovementStepDraftStore()
   const [customVariables, setCustomVariables] = useCustomVariablesStore()
-  const [highlightSettings, setHighlightSettings] = useHighlightSettingsStore()
   const [layerPositionDraft, setLayerPositionDraft] = useState<LayerPositionDraftState | null>(null)
   const [layerSizeDraft, setLayerSizeDraft] = useState<LayerSizeDraftState | null>(null)
   const [selectionDraft, setSelectionDraft] = useState<SelectionDraftState | null>(null)
@@ -482,10 +480,6 @@ export function EditorApp() {
     [documentState?.selection, resolvedExpressionVariables]
   )
 
-  function getShapeSettings() {
-    return ShapeSettingsStore.getSnapshot().context.value
-  }
-
   function applyProjectState(args: {
     nextProjectPath: string | null
     nextProjectName: string
@@ -514,7 +508,7 @@ export function EditorApp() {
     setMovementStep(args.nextMovementStep)
     setMovementStepDraft(args.nextMovementStepDraft)
     setCustomVariables(args.nextVariables)
-    setHighlightSettings(args.nextHighlightSettings)
+    updateHighlightSettingsStoreValue(args.nextHighlightSettings)
     updateShapeSettingsStoreValue(args.nextShapeSettings)
     pendingDraftSyncRef.current = {
       layerPosition: args.nextLayerPositionDraft,
@@ -595,8 +589,8 @@ export function EditorApp() {
           layerSizeDraft,
           selectionDraft,
           variables: customVariables,
-          highlightSettings,
-          shapeSettings: getShapeSettings(),
+          highlightSettings: getHighlightSettingsStoreValue(),
+          shapeSettings: getShapeSettingsStoreValue(),
         },
       })
 
@@ -634,8 +628,8 @@ export function EditorApp() {
           layerSizeDraft,
           selectionDraft,
           variables: customVariables,
-          highlightSettings,
-          shapeSettings: getShapeSettings(),
+          highlightSettings: getHighlightSettingsStoreValue(),
+          shapeSettings: getShapeSettingsStoreValue(),
         },
       })
 
@@ -1451,9 +1445,8 @@ export function EditorApp() {
   }
 
   function beginHighlightCreation(pointer: Point) {
-    console.log('[Highlight] beginHighlightCreation - start point:', pointer)
     if (!documentState) return
-    const layer = createHighlightLayer([pointer], highlightSettings)
+    const layer = createHighlightLayer([pointer], getHighlightSettingsStoreValue())
     setDocumentState({
       ...documentState,
       layers: [...documentState.layers, layer],
@@ -1471,7 +1464,7 @@ export function EditorApp() {
 
   function beginShapeCreation(pointer: Point) {
     if (!documentState) return
-    const layer = createShapeLayer({ x: pointer.x, y: pointer.y, width: 1, height: 1 }, getShapeSettings())
+    const layer = createShapeLayer({ x: pointer.x, y: pointer.y, width: 1, height: 1 }, getShapeSettingsStoreValue())
     setDocumentState({
       ...documentState,
       layers: [...documentState.layers, layer],
@@ -1614,7 +1607,7 @@ export function EditorApp() {
 
   function updateShapeCreation(pointer: Point) {
     if (!interaction || interaction.type !== 'creating-shape' || !documentState) return
-    const rect = getShapeRectFromDrag(getShapeSettings(), interaction.start, pointer)
+    const rect = getShapeRectFromDrag(getShapeSettingsStoreValue(), interaction.start, pointer)
     setDocumentState(
       updateLayer(documentState, interaction.layerId, layer => {
         if (!isShapeLayer(layer)) return layer
@@ -2342,71 +2335,7 @@ export function EditorApp() {
             </button>
           </div>
           <div className="flex flex-col gap-2">
-            <section>
-              <Accordion title="Highlight Tool" defaultOpen>
-                <div className="space-y-3 bg-base-200/60 text-sm text-base-content/70">
-                  <div className="grid grid-cols-[auto_1fr] items-center gap-0">
-                    <Label>Color</Label>
-                    <InputColor
-                      value={highlightSettings.color}
-                      onChange={event =>
-                        setHighlightSettings(current => ({
-                          ...current,
-                          color: event,
-                        }))
-                      }
-                    />
-                    <Label>Opacity</Label>
-                    <div className="grid grid-cols-[1fr_auto] items-center gap-2">
-                      <Input
-                        type="range"
-                        min="0.05"
-                        max="1"
-                        step="0.05"
-                        className="range range-xs"
-                        value={highlightSettings.opacity}
-                        onChange={event =>
-                          setHighlightSettings(current => ({
-                            ...current,
-                            opacity: clampHighlightOpacity(Number(event)),
-                          }))
-                        }
-                      />
-                      <span className="w-10 text-right text-xs">{Math.round(highlightSettings.opacity * 100)}%</span>
-                    </div>
-
-                    <Label>Brush</Label>
-                    <Select
-                      options={[
-                        { label: 'Circle', value: 'circle' },
-                        { label: 'Square', value: 'square' },
-                      ]}
-                      value={highlightSettings.brushShape}
-                      onChange={event =>
-                        setHighlightSettings(current => ({
-                          ...current,
-                          brushShape: event as HighlightBrushShape,
-                        }))
-                      }
-                    />
-                    <Label>Size</Label>
-                    <Input
-                      type="number"
-                      min={4}
-                      max={256}
-                      className="input input-xs"
-                      value={highlightSettings.brushSize}
-                      onChange={event =>
-                        setHighlightSettings(current => ({
-                          ...current,
-                          brushSize: clampHighlightBrushSize(Number(event) || current.brushSize),
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
-              </Accordion>
-            </section>
+            <HighlightToolSection />
 
             <ShapeToolSection />
 
