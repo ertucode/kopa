@@ -1,10 +1,11 @@
 import { Label } from '@/lib/components/label'
+import { cn } from '@/lib/functions/clsx'
 import { SaveIcon } from 'lucide-react'
-import { ReactNode } from 'react'
+import React, { ButtonHTMLAttributes, ReactNode } from 'react'
 
 export type FormWithInlineApplyProps = {
   onSubmit: () => void
-  label: string
+  label: string | undefined
   children: ReactNode
   disabled?: boolean
 }
@@ -19,14 +20,24 @@ export function FormWithInlineApply({ onSubmit, label, children, disabled }: For
       }}
     >
       <div className="grid grid-cols-[auto_1fr] gap-2 items-center">
-        <Label className="w-16 text-clip">{label}</Label>
+        {label && <Label className="w-16 text-clip">{label}</Label>}
         <div className="flex w-full">
           {children}
-          <button type="submit" className="btn btn-xs btn-outline w-8 rounded-none px-0" disabled={disabled}>
-            <SaveIcon className="h-4 w-4" />
-          </button>
+          <InlineButton type="submit" disabled={disabled} Icon={SaveIcon} />
         </div>
       </div>
     </form>
+  )
+}
+
+export function InlineButton({
+  className,
+  Icon,
+  ...props
+}: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> & { Icon: React.ComponentType<{ className?: string }> }) {
+  return (
+    <button className={cn('btn btn-xs btn-outline w-8 rounded-none px-0 border-base-content/20', className)} {...props}>
+      {<Icon className="h-4 w-4" />}
+    </button>
   )
 }

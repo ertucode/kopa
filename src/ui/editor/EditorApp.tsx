@@ -51,9 +51,6 @@ import {
   drawHighlightLayer,
   HighlightSettingsState,
 } from './highlightUtils'
-import { FormItem } from './form/FormItem'
-import { ApplyButton } from './form/ApplyButton'
-import { PanelForm } from './form/PanelForm'
 import {
   CustomVariableDraft,
   ExpressionVariables,
@@ -81,7 +78,6 @@ import {
   getHighlightSettingsStoreValue,
   updateErrorMessageStoreValue,
 } from './editorSimpleStores'
-import { Typescript } from '@common/Typescript'
 import { Accordion } from '@/lib/components/accordion'
 import { LabeledInput } from '@/lib/components/labeled-input'
 import {
@@ -94,7 +90,9 @@ import { EditorAutoSaveEffect } from './EditorAutoSaveEffect'
 import { HighlightToolSection } from './HighlightToolSection'
 import { ImagePreviewDialog } from './ImagePreviewDialog'
 import { EditorErrorDialog } from './EditorErrorDialog'
-import { FormWithInlineApply } from './form/FormWithInlineApply'
+import { FormWithInlineApply, InlineButton } from './form/FormWithInlineApply'
+import { OneInputOneLine } from '@/lib/components/one-input-one-line'
+import { Input } from '@/lib/components/input'
 
 const DOCUMENT_PRESETS: NewDocumentPreset[] = [
   { label: 'Avatar', width: 512, height: 512 },
@@ -221,13 +219,6 @@ function cloneLayer<T extends EditorLayer>(layer: T): T {
   }
 
   return { ...layer }
-}
-
-function layerDescription(layer: EditorLayer) {
-  if (layer.type === 'highlight') return ''
-  if (layer.type === 'image') return '[Image]'
-  if (layer.type === 'shape') return ''
-  Typescript.assertUnreachable(layer)
 }
 
 function cloneDocument(documentState: EditorDocument): EditorDocument {
@@ -2516,44 +2507,35 @@ export function EditorApp() {
                 </div>
               </section>
 
-              <section>
-                {documentState ? (
-                  <div className="space-y-3 py-4">
-                    <PanelForm onSubmit={applyCanvasDraft} header="Canvas size">
-                      <FormItem
-                        label="W"
-                        value={canvasDraft.width}
-                        onChange={v => setCanvasDraft(current => ({ ...current, width: v }))}
-                      />
-                      <FormItem
-                        label="H"
-                        value={canvasDraft.height}
-                        onChange={v => setCanvasDraft(current => ({ ...current, height: v }))}
-                      />
-                      <ApplyButton
+              {documentState && (
+                <section>
+                  <Accordion title="Document Settings" defaultOpen>
+                    <div className="space-y-3 bg-base-200/60 text-sm text-base-content/70">
+                      <FormWithInlineApply
+                        label="Canvs Size"
+                        onSubmit={applyCanvasDraft}
                         disabled={
                           parseRoundedMathExpression(canvasDraft.width, resolvedExpressionVariables) ===
                             documentState.width &&
                           parseRoundedMathExpression(canvasDraft.height, resolvedExpressionVariables) ===
                             documentState.height
                         }
-                      />
-                    </PanelForm>
-                    <PanelForm
-                      onSubmit={() => applyPasteSize(pasteSizeDraft.width, pasteSizeDraft.height)}
-                      header="Paste size"
-                    >
-                      <FormItem
-                        label="W"
-                        value={pasteSizeDraft.width}
-                        onChange={v => setPasteSizeDraft(current => ({ ...current, width: v }))}
-                      />
-                      <FormItem
-                        label="H"
-                        value={pasteSizeDraft.height}
-                        onChange={v => setPasteSizeDraft(current => ({ ...current, height: v }))}
-                      />
-                      <ApplyButton
+                      >
+                        <LabeledInput
+                          label="W"
+                          value={canvasDraft.width}
+                          onChange={v => setCanvasDraft(current => ({ ...current, width: v }))}
+                        />
+                        <LabeledInput
+                          label="H"
+                          value={canvasDraft.height}
+                          onChange={v => setCanvasDraft(current => ({ ...current, height: v }))}
+                        />
+                      </FormWithInlineApply>
+
+                      <FormWithInlineApply
+                        label="Paste Size"
+                        onSubmit={() => applyPasteSize(pasteSizeDraft.width, pasteSizeDraft.height)}
                         disabled={
                           (pasteSizeDraft.width.trim().length
                             ? Math.max(
@@ -2570,137 +2552,86 @@ export function EditorApp() {
                               )
                             : null) === documentState.pasteHeight
                         }
-                      />
-                    </PanelForm>
-                    <PanelForm onSubmit={() => applyMovementStep()} header="Movement step">
-                      <FormItem label="PX" value={movementStepDraft} onChange={v => setMovementStepDraft(v)} />
-                      <ApplyButton disabled={movementStep === String(normalizedMovementStepDraft)} />
-                    </PanelForm>
-                  </div>
-                ) : (
-                  <p className="text-sm text-base-content/60">Pick a preset or enter a custom canvas size to begin.</p>
-                )}
-              </section>
+                      >
+                        <LabeledInput
+                          label="W"
+                          value={pasteSizeDraft.width}
+                          onChange={v => setPasteSizeDraft(current => ({ ...current, width: v }))}
+                        />
+                        <LabeledInput
+                          label="H"
+                          value={pasteSizeDraft.height}
+                          onChange={v => setPasteSizeDraft(current => ({ ...current, height: v }))}
+                        />
+                      </FormWithInlineApply>
+                      <FormWithInlineApply
+                        label="Move Step"
+                        onSubmit={applyMovementStep}
+                        disabled={movementStep === String(normalizedMovementStepDraft)}
+                      >
+                        <LabeledInput label="PX" value={movementStepDraft} onChange={v => setMovementStepDraft(v)} />
+                      </FormWithInlineApply>
+                    </div>
+                  </Accordion>
+                </section>
+              )}
 
-              <section>
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
-                  Active Object
-                </div>
-                <div className="pb-4 pt-2 text-sm text-base-content/70">
-                  {activeLayer ? (
-                    <div className="space-y-3">
-                      <div className="font-medium text-base-content">
-                        {activeLayer.name} {layerDescription(activeLayer)}
-                      </div>
+              {activeLayer && (
+                <section>
+                  <Accordion title={`Active - ${activeLayer.name}`} defaultOpen>
+                    <div className="space-y-3 bg-base-200/60 text-sm text-base-content/70">
                       <div className="flex gap-2 text-xs">
-                        <div>
-                          Position: ({formatPixels(activeLayer.x)},{formatPixels(activeLayer.y)})
-                        </div>
-                        <div>
-                          Display Size: {formatPixels(activeLayer.width)}x{formatPixels(activeLayer.height)}
-                        </div>
+                        {isImageLayer(activeLayer) && (
+                          <div>
+                            Raster size: {formatPixels(activeLayer.pixelWidth)}x{formatPixels(activeLayer.pixelHeight)}
+                          </div>
+                        )}
                       </div>
-                      {isImageLayer(activeLayer) && (
-                        <div>
-                          Raster size: {formatPixels(activeLayer.pixelWidth)}x{formatPixels(activeLayer.pixelHeight)}
-                        </div>
-                      )}
                       {layerPositionDraft && layerPositionDraft.layerId === activeLayer.id && (
-                        <>
-                          <form
-                            className="space-y-2"
-                            onSubmit={event => {
-                              event.preventDefault()
-                              applyInspectorPosition()
-                            }}
-                          >
-                            <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
-                              <label className="form-control gap-1">
-                                <span className="label text-[11px]">X</span>
-                                <input
-                                  className="input input-xs"
-                                  value={layerPositionDraft.x}
-                                  onChange={event =>
-                                    setLayerPositionDraft(current =>
-                                      current ? { ...current, x: event.target.value } : current
-                                    )
-                                  }
-                                />
-                              </label>
-                              <label className="form-control gap-1">
-                                <span className="label text-[11px]">Y</span>
-                                <input
-                                  className="input input-xs"
-                                  value={layerPositionDraft.y}
-                                  onChange={event =>
-                                    setLayerPositionDraft(current =>
-                                      current ? { ...current, y: event.target.value } : current
-                                    )
-                                  }
-                                />
-                              </label>
-                              <div className="flex items-end">
-                                <button
-                                  type="submit"
-                                  className="btn btn-xs btn-info w-full"
-                                  disabled={isInspectorPositionUnchanged}
-                                >
-                                  Apply
-                                </button>
-                              </div>
-                            </div>
-                          </form>
-                        </>
+                        <FormWithInlineApply
+                          label="Canvs Size"
+                          onSubmit={applyInspectorPosition}
+                          disabled={isInspectorPositionUnchanged}
+                        >
+                          <LabeledInput
+                            label="X"
+                            value={layerPositionDraft.x}
+                            onChange={event =>
+                              setLayerPositionDraft(current => (current ? { ...current, x: event } : current))
+                            }
+                          />
+                          <LabeledInput
+                            label="Y"
+                            value={layerPositionDraft.y}
+                            onChange={event =>
+                              setLayerPositionDraft(current => (current ? { ...current, y: event } : current))
+                            }
+                          />
+                        </FormWithInlineApply>
                       )}
                       {!isHighlightLayer(activeLayer) &&
                         layerSizeDraft &&
                         layerSizeDraft.layerId === activeLayer.id && (
-                          <form
-                            className="space-y-2"
-                            onSubmit={event => {
-                              event.preventDefault()
-                              applyInspectorSize()
-                            }}
+                          <FormWithInlineApply
+                            label="Exact Size"
+                            onSubmit={applyInspectorSize}
+                            disabled={isInspectorSizeUnchanged}
                           >
-                            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">
-                              Exact size
-                            </div>
-                            <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
-                              <label className="form-control gap-1">
-                                <span className="label text-[11px]">W</span>
-                                <input
-                                  className="input input-xs"
-                                  value={layerSizeDraft.width}
-                                  onChange={event =>
-                                    setLayerSizeDraft(current =>
-                                      current ? { ...current, width: event.target.value } : current
-                                    )
-                                  }
-                                />
-                              </label>
-                              <label className="form-control gap-1">
-                                <span className="label text-[11px]">H</span>
-                                <input
-                                  className="input input-xs"
-                                  value={layerSizeDraft.height}
-                                  onChange={event =>
-                                    setLayerSizeDraft(current =>
-                                      current ? { ...current, height: event.target.value } : current
-                                    )
-                                  }
-                                />
-                              </label>
-                              <div className="flex items-end">
-                                <button
-                                  type="submit"
-                                  className="btn btn-xs btn-info w-full"
-                                  disabled={isInspectorSizeUnchanged}
-                                >
-                                  Apply
-                                </button>
-                              </div>
-                            </div>
-                          </form>
+                            <LabeledInput
+                              label="W"
+                              value={layerSizeDraft.width}
+                              onChange={event =>
+                                setLayerSizeDraft(current => (current ? { ...current, width: event } : current))
+                              }
+                            />
+                            <LabeledInput
+                              label="H"
+                              value={layerSizeDraft.height}
+                              onChange={event =>
+                                setLayerSizeDraft(current => (current ? { ...current, height: event } : current))
+                              }
+                            />
+                          </FormWithInlineApply>
                         )}
                       {activeHighlight && (
                         <div className="space-y-3 py-3">
@@ -2842,81 +2773,80 @@ export function EditorApp() {
                         </>
                       )}
                     </div>
-                  ) : (
-                    <div>Select an object to inspect or move it.</div>
-                  )}
-                </div>
-              </section>
+                  </Accordion>
+                </section>
+              )}
 
               <section>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
-                  Variables
-                </div>
-                <div className="space-y-3 rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
-                  <div className="space-y-2">
+                <Accordion title="Variables" defaultOpen>
+                  <div className="space-y-3 bg-base-200/60 text-sm text-base-content/70">
                     {customVariables.map(variable => {
                       const trimmedName = variable.name.trim()
                       const resolvedValue = trimmedName ? resolvedExpressionVariables[trimmedName] : undefined
                       const error = resolvedCustomVariables.errors[variable.id]
 
                       return (
-                        <div
-                          key={variable.id}
-                          className="space-y-2 rounded-xl border border-base-content/10 bg-base-100/40 p-3"
-                        >
-                          <div className="grid grid-cols-[1fr_auto] gap-2">
-                            <label className="form-control gap-1">
-                              <span className="label text-[11px]">Name</span>
-                              <input
-                                className="input input-xs"
-                                value={variable.name}
-                                placeholder="tileSize"
-                                onChange={event => updateCustomVariable(variable.id, { name: event.target.value })}
-                              />
-                            </label>
-                            <div className="flex items-end gap-2">
-                              <button
+                        <div className="flex flex-col gap-2 border-b border-base-content/20 pb-2">
+                          <form
+                            key={variable.id}
+                            className="flex flex-col gap-2"
+                            onSubmit={e => {
+                              e.preventDefault()
+                              applyCustomVariables()
+                            }}
+                          >
+                            <div>
+                              <OneInputOneLine label="Name">
+                                <Input
+                                  value={variable.name}
+                                  onChange={event => updateCustomVariable(variable.id, { name: event })}
+                                  placeholder="tileSize"
+                                />
+                              </OneInputOneLine>
+                              <OneInputOneLine label="Expression">
+                                <Input
+                                  value={variable.expression}
+                                  onChange={event => updateCustomVariable(variable.id, { expression: event })}
+                                  placeholder="canvasWidth / 4"
+                                />
+                              </OneInputOneLine>
+                            </div>
+                            <div className="flex">
+                              <Button
                                 type="button"
-                                className="btn btn-xs btn-ghost btn-square"
-                                title="Remove variable"
+                                className="btn-xs btn-soft flex-1 rounded-none"
                                 onClick={() => removeCustomVariable(variable.id)}
                               >
-                                <Trash2Icon className="size-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-xs btn-info"
-                                onClick={applyCustomVariables}
+                                Delete
+                              </Button>
+                              <Button
+                                className="btn-xs btn-soft flex-1 rounded-none"
                                 disabled={Object.keys(resolvedCustomVariables.errors).length > 0}
                               >
-                                Apply
-                              </button>
+                                Save
+                              </Button>
                             </div>
-                          </div>
-                          <label className="form-control gap-1">
-                            <span className="label text-[11px]">Expression</span>
-                            <input
-                              className="input input-xs"
-                              value={variable.expression}
-                              placeholder="canvasWidth / 4"
-                              onChange={event => updateCustomVariable(variable.id, { expression: event.target.value })}
-                            />
-                          </label>
-                          <div className={cn('text-xs', error ? 'text-error' : 'text-base-content/55')}>
-                            {error
-                              ? error
-                              : trimmedName && resolvedValue !== undefined
-                                ? `Value: ${Math.round(resolvedValue)}`
-                                : 'Enter a variable name and expression'}
-                          </div>
+                          </form>
+
+                          {error ? (
+                            <div className="text-xs text-base-content/55">{error}</div>
+                          ) : trimmedName && resolvedValue !== undefined ? (
+                            <OneInputOneLine label="Value">
+                              <div className="text-xs">{resolvedValue}</div>
+                            </OneInputOneLine>
+                          ) : (
+                            <div className={cn('text-xs', error ? 'text-error' : 'text-base-content/55')}>
+                              Enter a variable name and expression
+                            </div>
+                          )}
                         </div>
                       )
                     })}
+                    <Button type="button" onClick={addCustomVariable} className="btn-xs btn-soft w-full rounded-none">
+                      Add Variable
+                    </Button>
                   </div>
-                  <Button className="btn-sm btn-soft w-full" onClick={addCustomVariable}>
-                    Add Variable
-                  </Button>
-                </div>
+                </Accordion>
               </section>
 
               <section>
