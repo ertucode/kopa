@@ -73,9 +73,12 @@ import {
 } from './editorSession'
 import {
   useCanvasDraftStore,
+  useCustomVariablesStore,
+  useErrorMessageStore,
   useHighlightSettingsStore,
   useMovementStepDraftStore,
   useMovementStepStore,
+  useProjectNameDraftStore,
   useShapeSettingsStore,
   useToolStore,
 } from './editorSimpleStores'
@@ -158,10 +161,6 @@ type PositionDialogState = {
 type ImagePreviewDialogState = {
   layerId: string
   zoom: number
-}
-
-type ProjectNameDraftState = {
-  value: string
 }
 
 type SelectionPreview = {
@@ -413,14 +412,14 @@ export function EditorApp() {
   const [pasteSizeDraft, setPasteSizeDraft] = useState<PasteSizeDraftState>({ width: '', height: '' })
   const [movementStep, setMovementStep] = useMovementStepStore()
   const [movementStepDraft, setMovementStepDraft] = useMovementStepDraftStore()
-  const [customVariables, setCustomVariables] = useState<CustomVariableDraft[]>(DEFAULT_EDITOR_SESSION.variables)
+  const [customVariables, setCustomVariables] = useCustomVariablesStore()
   const [highlightSettings, setHighlightSettings] = useHighlightSettingsStore()
   const [shapeSettings, setShapeSettings] = useShapeSettingsStore()
   const [layerPositionDraft, setLayerPositionDraft] = useState<LayerPositionDraftState | null>(null)
   const [layerSizeDraft, setLayerSizeDraft] = useState<LayerSizeDraftState | null>(null)
   const [selectionDraft, setSelectionDraft] = useState<SelectionDraftState | null>(null)
-  const [projectNameDraft, setProjectNameDraft] = useState<ProjectNameDraftState>({ value: 'Untitled Project' })
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [projectNameDraft, setProjectNameDraft] = useProjectNameDraftStore()
+  const [errorMessage, setErrorMessage] = useErrorMessageStore()
   const [isSaving, setIsSaving] = useState(false)
   const [isProjectSaving, setIsProjectSaving] = useState(false)
   const [projectPath, setProjectPath] = useState<string | null>(null)

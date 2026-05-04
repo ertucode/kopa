@@ -20,6 +20,23 @@ export const {
 } = createSimpleStore(DEFAULT_EDITOR_SESSION.movementStepDraft, 'MovementStepDraft')
 
 export const {
+  CustomVariablesStore,
+  CustomVariablesStoreActions,
+  useCustomVariablesStore,
+  useCustomVariablesStoreValue,
+} = createSimpleStore(DEFAULT_EDITOR_SESSION.variables, 'CustomVariables')
+
+export const {
+  ProjectNameDraftStore,
+  ProjectNameDraftStoreActions,
+  useProjectNameDraftStore,
+  useProjectNameDraftStoreValue,
+} = createSimpleStore({ value: 'Untitled Project' }, 'ProjectNameDraft')
+
+export const { ErrorMessageStore, ErrorMessageStoreActions, useErrorMessageStore, useErrorMessageStoreValue } =
+  createSimpleStore<string | null, 'ErrorMessage'>(null, 'ErrorMessage')
+
+export const {
   HighlightSettingsStore,
   HighlightSettingsStoreActions,
   useHighlightSettingsStore,
