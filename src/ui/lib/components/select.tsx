@@ -8,7 +8,9 @@ export function Select({ options, value, onChange }: SelectProps) {
   return (
     <select className="select select-xs rounded-none" value={value} onChange={event => onChange(event.target.value)}>
       {options.map(option => (
-        <option value={option.value}>{option.label}</option>
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
       ))}
     </select>
   )

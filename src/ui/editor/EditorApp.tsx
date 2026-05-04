@@ -77,8 +77,9 @@ import { Accordion } from '@/lib/components/accordion'
 import { Select } from '@/lib/components/select'
 import { InputColor } from '@/lib/components/input-color'
 import { Input } from '@/lib/components/input'
-import { GridCols } from '@/lib/components/grid-cols'
 import { Label } from '@/lib/components/label'
+import { InputRange } from '@/lib/components/input-range'
+import { LabeledInput } from '@/lib/components/labeled-input'
 
 const DOCUMENT_PRESETS: NewDocumentPreset[] = [
   { label: 'Avatar', width: 512, height: 512 },
@@ -2477,155 +2478,112 @@ export function EditorApp() {
                       }
                     />
                     <Label>Opacity</Label>
-                    <GridCols>
-                      <Input
-                        type="range"
-                        min="0.05"
-                        max="1"
-                        step="0.05"
-                        className="range range-xs"
-                        value={shapeSettings.opacity}
-                        onChange={event =>
-                          setShapeSettings(current => ({
-                            ...current,
-                            opacity: clampShapeOpacity(Number(event)),
-                          }))
-                        }
-                      />
-                      <span className="w-10 text-right text-xs">{Math.round(shapeSettings.opacity * 100)}%</span>
-                    </GridCols>
+                    <InputRange
+                      value={shapeSettings.opacity}
+                      onChange={event =>
+                        setShapeSettings(current => ({ ...current, opacity: clampShapeOpacity(Number(event)) }))
+                      }
+                    />
                   </div>
                 </div>
               </Accordion>
             </section>
 
-            <section>
-              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
-                Selection
-              </div>
-              <div className="rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
-                {documentState?.selection && selectionDraft ? (
-                  <div className="space-y-3">
-                    <div className="flex gap-2">
-                      <Button className="btn-sm btn-soft flex-1" onClick={() => void copySelectionToClipboard()}>
-                        Copy
-                      </Button>
-                      <Button
-                        className="btn-sm btn-soft flex-1"
-                        onClick={() => void saveSelectionImage()}
-                        disabled={isSaving}
-                      >
-                        Save PNG
-                      </Button>
-                    </div>
-                    <div className="space-y-1">
-                      <div>
-                        Origin: {formatPixels(documentState.selection.x)}, {formatPixels(documentState.selection.y)}
+            {documentState?.selection && selectionDraft && (
+              <section>
+                <Accordion title="Selection" defaultOpen>
+                  <div className="space-y-3 bg-base-200/60 text-sm text-base-content/70">
+                    <div className="space-y-3">
+                      <div className="flex">
+                        <Button
+                          className="btn-xs btn-soft flex-1 rounded-none"
+                          onClick={() => void copySelectionToClipboard()}
+                        >
+                          Copy
+                        </Button>
+                        <Button
+                          className="btn-xs btn-soft flex-1 rounded-none"
+                          onClick={() => void saveSelectionImage()}
+                          disabled={isSaving}
+                        >
+                          Save PNG
+                        </Button>
                       </div>
-                      <div>
-                        Size: {formatPixels(documentState.selection.width)} x{' '}
-                        {formatPixels(documentState.selection.height)}
-                      </div>
-                    </div>
 
-                    <form
-                      className="space-y-2"
-                      onSubmit={event => {
-                        event.preventDefault()
-                        applySelectionPosition()
-                      }}
-                    >
-                      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">
-                        Placement
-                      </div>
-                      <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
-                        <label className="form-control gap-1">
-                          <span className="label text-[11px]">X</span>
-                          <input
-                            className="input input-xs"
-                            value={selectionDraft.x}
-                            onChange={event =>
-                              setSelectionDraft(current => (current ? { ...current, x: event.target.value } : current))
-                            }
-                          />
-                        </label>
-                        <label className="form-control gap-1">
-                          <span className="label text-[11px]">Y</span>
-                          <input
-                            className="input input-xs"
-                            value={selectionDraft.y}
-                            onChange={event =>
-                              setSelectionDraft(current => (current ? { ...current, y: event.target.value } : current))
-                            }
-                          />
-                        </label>
-                        <div className="flex items-end">
+                      <form
+                        className="space-y-2"
+                        onSubmit={event => {
+                          event.preventDefault()
+                          applySelectionPosition()
+                        }}
+                      >
+                        <div className="grid grid-cols-[auto_1fr_auto] gap-2 items-center">
+                          <Label className="w-16 text-clip">Position</Label>
+                          <div className="flex">
+                            <LabeledInput
+                              label="X"
+                              value={selectionDraft.x}
+                              onChange={event =>
+                                setSelectionDraft(current => (current ? { ...current, x: event } : current))
+                              }
+                            />
+                            <LabeledInput
+                              label="Y"
+                              value={selectionDraft.y}
+                              onChange={event =>
+                                setSelectionDraft(current => (current ? { ...current, y: event } : current))
+                              }
+                            />
+                          </div>
                           <button
                             type="submit"
                             className="btn btn-xs btn-info w-full"
                             disabled={isSelectionPositionUnchanged}
                           >
-                            Apply
+                            <SaveIcon className="h-4 w-4" />
                           </button>
                         </div>
-                      </div>
-                    </form>
+                      </form>
 
-                    <form
-                      className="space-y-2"
-                      onSubmit={event => {
-                        event.preventDefault()
-                        applySelectionSize()
-                      }}
-                    >
-                      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">
-                        Exact size
-                      </div>
-                      <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
-                        <label className="form-control gap-1">
-                          <span className="label text-[11px]">W</span>
-                          <input
-                            className="input input-xs"
-                            value={selectionDraft.width}
-                            onChange={event =>
-                              setSelectionDraft(current =>
-                                current ? { ...current, width: event.target.value } : current
-                              )
-                            }
-                          />
-                        </label>
-                        <label className="form-control gap-1">
-                          <span className="label text-[11px]">H</span>
-                          <input
-                            className="input input-xs"
-                            value={selectionDraft.height}
-                            onChange={event =>
-                              setSelectionDraft(current =>
-                                current ? { ...current, height: event.target.value } : current
-                              )
-                            }
-                          />
-                        </label>
-                        <div className="flex items-end">
+                      <form
+                        className="space-y-2"
+                        onSubmit={event => {
+                          event.preventDefault()
+                          applySelectionSize()
+                        }}
+                      >
+                        <div className="grid grid-cols-[auto_1fr_auto] gap-2 items-center">
+                          <Label className="w-16 text-clip">Exact Size</Label>
+                          <div className="flex">
+                            <LabeledInput
+                              label="W"
+                              value={selectionDraft.width}
+                              onChange={event =>
+                                setSelectionDraft(current => (current ? { ...current, width: event } : current))
+                              }
+                            />
+                            <LabeledInput
+                              label="H"
+                              value={selectionDraft.height}
+                              onChange={event =>
+                                setSelectionDraft(current => (current ? { ...current, height: event } : current))
+                              }
+                            />
+                          </div>
                           <button
                             type="submit"
                             className="btn btn-xs btn-info w-full"
                             disabled={isSelectionSizeUnchanged}
                           >
-                            Apply
+                            <SaveIcon className="h-4 w-4" />
                           </button>
                         </div>
-                      </div>
-                    </form>
+                      </form>
+                    </div>
                   </div>
-                ) : (
-                  <div>
-                    Use the marquee tool to select any canvas region, then drag inside it to move the flattened image
-                    selection.
-                  </div>
-                )}
-              </div>
-            </section>
+                </Accordion>
+              </section>
+            )}
             <section>
               <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">History</div>
               <div className="rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
