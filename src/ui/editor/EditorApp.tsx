@@ -95,6 +95,7 @@ import { EditorAutoSaveEffect } from './EditorAutoSaveEffect'
 import { HighlightToolSection } from './HighlightToolSection'
 import { ImagePreviewDialog } from './ImagePreviewDialog'
 import { EditorErrorDialog } from './EditorErrorDialog'
+import { FormWithInlineApply } from './form/FormWithInlineApply'
 
 const DOCUMENT_PRESETS: NewDocumentPreset[] = [
   { label: 'Avatar', width: 512, height: 512 },
@@ -1532,17 +1533,6 @@ export function EditorApp() {
     const absolutePoints = getHighlightAbsolutePoints(layer)
     const lastPoint = absolutePoints[absolutePoints.length - 1]
 
-    console.log(
-      '[Highlight] update - constrainAxis:',
-      constrainAxis,
-      'axisLock:',
-      interaction.axisLock,
-      'lastPoint:',
-      lastPoint,
-      'pointer:',
-      pointer
-    )
-
     let constrainedPointer = pointer
     let nextAxisLock = interaction.axisLock
 
@@ -1553,9 +1543,7 @@ export function EditorApp() {
         const deltaX = Math.abs(pointer.x - lastPoint.x)
         const deltaY = Math.abs(pointer.y - lastPoint.y)
         nextAxisLock = deltaX >= deltaY ? 'x' : 'y'
-        console.log('[Highlight] locking axis:', nextAxisLock, 'deltaX:', deltaX, 'deltaY:', deltaY)
       }
-      console.log('[Highlight] using locked axis:', nextAxisLock)
       if (nextAxisLock === 'x') {
         constrainedPointer = { x: pointer.x, y: lastPoint.y }
       } else {
@@ -1735,7 +1723,6 @@ export function EditorApp() {
       return
     }
     if (interaction.type === 'creating-highlight') {
-      console.log('[Highlight] pointerMove - shiftKey:', event.shiftKey, 'pointer:', pointer)
       updateHighlightCreation(pointer, event.shiftKey)
       return
     }
@@ -2216,75 +2203,47 @@ export function EditorApp() {
                         </Button>
                       </div>
 
-                      <form
-                        className="space-y-2"
-                        onSubmit={event => {
-                          event.preventDefault()
-                          applySelectionPosition()
-                        }}
+                      <FormWithInlineApply
+                        label="Position"
+                        onSubmit={applySelectionPosition}
+                        disabled={isSelectionPositionUnchanged}
                       >
-                        <div className="grid grid-cols-[auto_1fr_auto] gap-2 items-center">
-                          <Label className="w-16 text-clip">Position</Label>
-                          <div className="flex">
-                            <LabeledInput
-                              label="X"
-                              value={selectionDraft.x}
-                              onChange={event =>
-                                setSelectionDraft(current => (current ? { ...current, x: event } : current))
-                              }
-                            />
-                            <LabeledInput
-                              label="Y"
-                              value={selectionDraft.y}
-                              onChange={event =>
-                                setSelectionDraft(current => (current ? { ...current, y: event } : current))
-                              }
-                            />
-                          </div>
-                          <button
-                            type="submit"
-                            className="btn btn-xs btn-info w-full"
-                            disabled={isSelectionPositionUnchanged}
-                          >
-                            <SaveIcon className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </form>
+                        <LabeledInput
+                          label="X"
+                          value={selectionDraft.x}
+                          onChange={event =>
+                            setSelectionDraft(current => (current ? { ...current, x: event } : current))
+                          }
+                        />
+                        <LabeledInput
+                          label="Y"
+                          value={selectionDraft.y}
+                          onChange={event =>
+                            setSelectionDraft(current => (current ? { ...current, y: event } : current))
+                          }
+                        />
+                      </FormWithInlineApply>
 
-                      <form
-                        className="space-y-2"
-                        onSubmit={event => {
-                          event.preventDefault()
-                          applySelectionSize()
-                        }}
+                      <FormWithInlineApply
+                        label="Exact Size"
+                        onSubmit={applySelectionSize}
+                        disabled={isSelectionSizeUnchanged}
                       >
-                        <div className="grid grid-cols-[auto_1fr_auto] gap-2 items-center">
-                          <Label className="w-16 text-clip">Exact Size</Label>
-                          <div className="flex">
-                            <LabeledInput
-                              label="W"
-                              value={selectionDraft.width}
-                              onChange={event =>
-                                setSelectionDraft(current => (current ? { ...current, width: event } : current))
-                              }
-                            />
-                            <LabeledInput
-                              label="H"
-                              value={selectionDraft.height}
-                              onChange={event =>
-                                setSelectionDraft(current => (current ? { ...current, height: event } : current))
-                              }
-                            />
-                          </div>
-                          <button
-                            type="submit"
-                            className="btn btn-xs btn-info w-full"
-                            disabled={isSelectionSizeUnchanged}
-                          >
-                            <SaveIcon className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </form>
+                        <LabeledInput
+                          label="W"
+                          value={selectionDraft.width}
+                          onChange={event =>
+                            setSelectionDraft(current => (current ? { ...current, width: event } : current))
+                          }
+                        />
+                        <LabeledInput
+                          label="H"
+                          value={selectionDraft.height}
+                          onChange={event =>
+                            setSelectionDraft(current => (current ? { ...current, height: event } : current))
+                          }
+                        />
+                      </FormWithInlineApply>
                     </div>
                   </div>
                 </Accordion>
