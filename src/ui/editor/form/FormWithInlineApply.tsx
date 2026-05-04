@@ -19,8 +19,8 @@ export function FormWithInlineApply({ onSubmit, label, children, disabled }: For
         onSubmit()
       }}
     >
-      <div className="grid grid-cols-[auto_1fr] gap-2 items-center">
-        {label && <Label className="w-16 text-clip">{label}</Label>}
+      <div className="grid grid-cols-[auto_1fr] items-center">
+        {label && <Label className="text-clip">{label}</Label>}
         <div className="flex w-full">
           {children}
           <InlineButton type="submit" disabled={disabled} Icon={SaveIcon} />

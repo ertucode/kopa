@@ -92,6 +92,9 @@ import { EditorErrorDialog } from './EditorErrorDialog'
 import { FormWithInlineApply } from './form/FormWithInlineApply'
 import { OneInputOneLine } from '@/lib/components/one-input-one-line'
 import { Input } from '@/lib/components/input'
+import { InputColor } from '@/lib/components/input-color'
+import { InputRange } from '@/lib/components/input-range'
+import { Select } from '@/lib/components/select'
 
 const DOCUMENT_PRESETS: NewDocumentPreset[] = [
   { label: 'Avatar', width: 512, height: 512 },
@@ -2588,7 +2591,7 @@ export function EditorApp() {
                       </div>
                       {layerPositionDraft && layerPositionDraft.layerId === activeLayer.id && (
                         <FormWithInlineApply
-                          label="Canvs Size"
+                          label="Position"
                           onSubmit={applyInspectorPosition}
                           disabled={isInspectorPositionUnchanged}
                         >
@@ -2633,142 +2636,120 @@ export function EditorApp() {
                           </FormWithInlineApply>
                         )}
                       {activeHighlight && (
-                        <div className="space-y-3 py-3">
-                          <div className="grid grid-cols-[auto_1fr] items-center gap-3">
-                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Color</span>
-                            <input
-                              type="color"
-                              className="input input-xs h-9 w-full p-1"
+                        <>
+                          <OneInputOneLine label="Color">
+                            <InputColor
                               value={activeHighlight.color}
-                              onChange={event => applyActiveHighlightStyle({ color: event.target.value })}
+                              onChange={value => applyActiveHighlightStyle({ color: value })}
                             />
-                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">
-                              Opacity
-                            </span>
-                            <div className="grid grid-cols-[1fr_auto] items-center gap-2">
-                              <input
-                                type="range"
-                                min="0.05"
-                                max="1"
-                                step="0.05"
-                                className="range range-xs"
-                                value={activeHighlight.opacity}
-                                onChange={event =>
-                                  applyActiveHighlightStyle({
-                                    opacity: clampHighlightOpacity(Number(event.target.value)),
-                                  })
-                                }
-                              />
-                              <span className="w-10 text-right text-xs">
-                                {Math.round(activeHighlight.opacity * 100)}%
-                              </span>
-                            </div>
-                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Brush</span>
-                            <select
-                              className="select select-xs"
-                              value={activeHighlight.brushShape}
-                              onChange={event =>
+                          </OneInputOneLine>
+                          <OneInputOneLine label="Opacity">
+                            <InputRange
+                              value={activeHighlight.opacity}
+                              onChange={value =>
                                 applyActiveHighlightStyle({
-                                  brushShape: event.target.value as HighlightBrushShape,
+                                  opacity: clampHighlightOpacity(Number(value)),
                                 })
                               }
-                            >
-                              <option value="circle">Circle</option>
-                              <option value="square">Square</option>
-                            </select>
-                            <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Size</span>
-                            <input
+                            />
+                          </OneInputOneLine>
+                          <OneInputOneLine label="Brush">
+                            <Select
+                              options={[
+                                { label: 'Circle', value: 'circle' },
+                                { label: 'Square', value: 'square' },
+                              ]}
+                              value={activeHighlight.brushShape}
+                              onChange={value =>
+                                applyActiveHighlightStyle({
+                                  brushShape: value as HighlightBrushShape,
+                                })
+                              }
+                            />
+                          </OneInputOneLine>
+                          <OneInputOneLine label="Size">
+                            <Input
                               type="number"
                               min={4}
                               max={256}
                               className="input input-xs"
                               value={activeHighlight.brushSize}
-                              onChange={event =>
+                              onChange={value =>
                                 applyActiveHighlightStyle({
-                                  brushSize: clampHighlightBrushSize(
-                                    Number(event.target.value) || activeHighlight.brushSize
-                                  ),
+                                  brushSize: clampHighlightBrushSize(Number(value) || activeHighlight.brushSize),
                                 })
                               }
                             />
-                          </div>
-                        </div>
+                          </OneInputOneLine>
+                        </>
                       )}
                       {activeShape && (
                         <>
-                          <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Type</span>
-                          <select
-                            className="select select-xs"
-                            value={activeShape.shape}
-                            onChange={event =>
-                              applyActiveShapeStyle({
-                                shape: event.target.value as ShapeType,
-                              })
-                            }
-                          >
-                            <option value="rectangle">Rectangle</option>
-                            <option value="circle">Circle</option>
-                            <option value="ellipse">Ellipse</option>
-                          </select>
-                          <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Fill</span>
-                          <input
-                            type="color"
-                            className="input input-xs h-9 w-full p-1"
-                            value={activeShape.fillColor}
-                            onChange={event => applyActiveShapeStyle({ fillColor: event.target.value })}
-                          />
-                          <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Border</span>
-                          <input
-                            type="color"
-                            className="input input-xs h-9 w-full p-1"
-                            value={activeShape.borderColor}
-                            onChange={event => applyActiveShapeStyle({ borderColor: event.target.value })}
-                          />
-                          <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Radius</span>
-                          <input
-                            type="number"
-                            min={0}
-                            className="input input-xs"
-                            value={activeShape.borderRadius}
-                            disabled={activeShape.shape !== 'rectangle'}
-                            onChange={event =>
-                              applyActiveShapeStyle({
-                                borderRadius: Math.max(0, Math.round(Number(event.target.value) || 0)),
-                              })
-                            }
-                          />
-                          <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">
-                            Border Width
-                          </span>
-                          <input
-                            type="number"
-                            min={0}
-                            className="input input-xs"
-                            value={activeShape.borderWidth}
-                            disabled={activeShape.shape !== 'rectangle'}
-                            onChange={event =>
-                              applyActiveShapeStyle({
-                                borderWidth: Math.max(0, Math.round(Number(event.target.value) || 0)),
-                              })
-                            }
-                          />
-                          <span className="text-[11px] uppercase tracking-[0.14em] text-base-content/50">Opacity</span>
-                          <div className="grid grid-cols-[1fr_auto] items-center gap-2">
-                            <input
-                              type="range"
-                              min="0.05"
-                              max="1"
-                              step="0.05"
-                              className="range range-xs"
-                              value={activeShape.opacity}
-                              onChange={event =>
+                          <OneInputOneLine label="Type">
+                            <Select
+                              options={[
+                                { label: 'Rectangle', value: 'rectangle' },
+                                { label: 'Circle', value: 'circle' },
+                                { label: 'Ellipse', value: 'ellipse' },
+                              ]}
+                              value={activeShape.shape}
+                              onChange={value =>
                                 applyActiveShapeStyle({
-                                  opacity: clampShapeOpacity(Number(event.target.value)),
+                                  shape: value as ShapeType,
                                 })
                               }
                             />
-                            <span className="w-10 text-right text-xs">{Math.round(activeShape.opacity * 100)}%</span>
-                          </div>
+                          </OneInputOneLine>
+                          <OneInputOneLine label="Fill">
+                            <InputColor
+                              value={activeShape.fillColor}
+                              onChange={value => applyActiveShapeStyle({ fillColor: value })}
+                            />
+                          </OneInputOneLine>
+                          <OneInputOneLine label="Border">
+                            <InputColor
+                              value={activeShape.borderColor}
+                              onChange={value => applyActiveShapeStyle({ borderColor: value })}
+                            />
+                          </OneInputOneLine>
+                          <OneInputOneLine label="Radius">
+                            <Input
+                              type="number"
+                              min={0}
+                              className="input input-xs"
+                              value={activeShape.borderRadius}
+                              disabled={activeShape.shape !== 'rectangle'}
+                              onChange={value =>
+                                applyActiveShapeStyle({
+                                  borderRadius: Math.max(0, Math.round(Number(value) || 0)),
+                                })
+                              }
+                            />
+                          </OneInputOneLine>
+                          <OneInputOneLine label="Border Width">
+                            <Input
+                              type="number"
+                              min={0}
+                              className="input input-xs"
+                              value={activeShape.borderWidth}
+                              disabled={activeShape.shape !== 'rectangle'}
+                              onChange={value =>
+                                applyActiveShapeStyle({
+                                  borderWidth: Math.max(0, Math.round(Number(value) || 0)),
+                                })
+                              }
+                            />
+                          </OneInputOneLine>
+                          <OneInputOneLine label="Opacity">
+                            <InputRange
+                              value={activeShape.opacity}
+                              onChange={value =>
+                                applyActiveShapeStyle({
+                                  opacity: clampShapeOpacity(Number(value)),
+                                })
+                              }
+                            />
+                          </OneInputOneLine>
                         </>
                       )}
                     </div>
