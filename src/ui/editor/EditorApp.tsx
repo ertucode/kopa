@@ -79,7 +79,8 @@ import {
   useMovementStepDraftStore,
   useMovementStepStore,
   useProjectNameDraftStore,
-  useShapeSettingsStore,
+  ShapeSettingsStore,
+  ShapeSettingsStoreActions,
   useToolStore,
 } from './editorSimpleStores'
 import { Typescript } from '@common/Typescript'
@@ -88,8 +89,14 @@ import { Select } from '@/lib/components/select'
 import { InputColor } from '@/lib/components/input-color'
 import { Input } from '@/lib/components/input'
 import { Label } from '@/lib/components/label'
-import { InputRange } from '@/lib/components/input-range'
 import { LabeledInput } from '@/lib/components/labeled-input'
+import {
+  HasUnsavedChangesStoreActions,
+  isHydratingProjectRef,
+  useHasUnsavedChangesStoreValue,
+} from './editorPersistenceState'
+import { ShapeToolSection } from './ShapeToolSection'
+import { EditorAutoSaveEffect } from './EditorAutoSaveEffect'
 
 const DOCUMENT_PRESETS: NewDocumentPreset[] = [
   { label: 'Avatar', width: 512, height: 512 },
@@ -414,7 +421,6 @@ export function EditorApp() {
   const [movementStepDraft, setMovementStepDraft] = useMovementStepDraftStore()
   const [customVariables, setCustomVariables] = useCustomVariablesStore()
   const [highlightSettings, setHighlightSettings] = useHighlightSettingsStore()
-  const [shapeSettings, setShapeSettings] = useShapeSettingsStore()
   const [layerPositionDraft, setLayerPositionDraft] = useState<LayerPositionDraftState | null>(null)
   const [layerSizeDraft, setLayerSizeDraft] = useState<LayerSizeDraftState | null>(null)
   const [selectionDraft, setSelectionDraft] = useState<SelectionDraftState | null>(null)
@@ -425,15 +431,13 @@ export function EditorApp() {
   const [projectPath, setProjectPath] = useState<string | null>(null)
   const [projectName, setProjectName] = useState('Untitled Project')
   const [recentProjects, setRecentProjects] = useState<RecentEditorProject[]>([])
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const hasUnsavedChanges = useHasUnsavedChangesStoreValue()
   const [viewportRef, viewportBounds] = useMeasure()
   const inputRef = useRef<HTMLInputElement>(null)
   const mainCanvasRef = useRef<HTMLCanvasElement>(null)
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null)
   const documentStateRef = useRef<EditorDocument | null>(null)
   const imageCacheRef = useRef(new Map<string, HTMLImageElement>())
-  const isHydratingProjectRef = useRef(true)
-  const autosaveTimeoutRef = useRef<number | null>(null)
   const pendingDraftSyncRef = useRef<PendingDraftSyncState>({
     layerPosition: null,
     layerSize: null,
@@ -478,6 +482,10 @@ export function EditorApp() {
     [documentState?.selection, resolvedExpressionVariables]
   )
 
+  function getShapeSettings() {
+    return ShapeSettingsStore.getSnapshot().context.value
+  }
+
   function applyProjectState(args: {
     nextProjectPath: string | null
     nextProjectName: string
@@ -507,7 +515,7 @@ export function EditorApp() {
     setMovementStepDraft(args.nextMovementStepDraft)
     setCustomVariables(args.nextVariables)
     setHighlightSettings(args.nextHighlightSettings)
-    setShapeSettings(args.nextShapeSettings)
+    ShapeSettingsStoreActions(args.nextShapeSettings)
     pendingDraftSyncRef.current = {
       layerPosition: args.nextLayerPositionDraft,
       layerSize: args.nextLayerSizeDraft,
@@ -521,7 +529,7 @@ export function EditorApp() {
     setLayerSizeDraft(args.nextLayerSizeDraft)
     setSelectionDraft(args.nextSelectionDraft)
     setPasteSizeDraft(args.nextPasteSizeDraft)
-    setHasUnsavedChanges(false)
+    HasUnsavedChangesStoreActions(false)
   }
 
   async function refreshRecentProjects() {
@@ -588,7 +596,7 @@ export function EditorApp() {
           selectionDraft,
           variables: customVariables,
           highlightSettings,
-          shapeSettings,
+          shapeSettings: getShapeSettings(),
         },
       })
 
@@ -599,7 +607,7 @@ export function EditorApp() {
 
       setProjectPath(nextProjectPath)
       setProjectName(serializedProject.request.project.name)
-      setHasUnsavedChanges(false)
+      HasUnsavedChangesStoreActions(false)
       await refreshRecentProjects()
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to save editor project')
@@ -627,7 +635,7 @@ export function EditorApp() {
           selectionDraft,
           variables: customVariables,
           highlightSettings,
-          shapeSettings,
+          shapeSettings: getShapeSettings(),
         },
       })
 
@@ -639,7 +647,7 @@ export function EditorApp() {
       if (!response.canceled && response.projectPath) {
         setProjectPath(response.projectPath)
         setProjectName(serializedProject.request.project.name)
-        setHasUnsavedChanges(false)
+        HasUnsavedChangesStoreActions(false)
         await refreshRecentProjects()
       }
     } catch (error) {
@@ -718,7 +726,7 @@ export function EditorApp() {
       nextHighlightSettings: DEFAULT_EDITOR_SESSION.highlightSettings,
       nextShapeSettings: DEFAULT_EDITOR_SESSION.shapeSettings,
     })
-    setHasUnsavedChanges(true)
+    HasUnsavedChangesStoreActions(true)
   }
 
   function applyProjectName() {
@@ -730,7 +738,7 @@ export function EditorApp() {
 
     if (nextProjectName === projectName) return
     setProjectName(nextProjectName)
-    setHasUnsavedChanges(true)
+    HasUnsavedChangesStoreActions(true)
   }
 
   function applyMovementStep() {
@@ -1039,43 +1047,6 @@ export function EditorApp() {
       height: documentState.pasteHeight === null ? '' : String(documentState.pasteHeight),
     })
   }, [documentState?.pasteHeight, documentState?.pasteWidth])
-
-  useEffect(() => {
-    if (isHydratingProjectRef.current) {
-      isHydratingProjectRef.current = false
-      return
-    }
-
-    setHasUnsavedChanges(true)
-
-    if (interaction || !projectPath) return
-
-    if (autosaveTimeoutRef.current !== null) {
-      window.clearTimeout(autosaveTimeoutRef.current)
-    }
-
-    autosaveTimeoutRef.current = window.setTimeout(() => {
-      void saveProjectToPath(projectPath)
-    }, 700)
-
-    return () => {
-      if (autosaveTimeoutRef.current !== null) {
-        window.clearTimeout(autosaveTimeoutRef.current)
-      }
-    }
-  }, [
-    canvasDraft,
-    customVariables,
-    documentState,
-    highlightSettings,
-    history,
-    interaction,
-    movementStep,
-    projectName,
-    projectPath,
-    shapeSettings,
-    tool,
-  ])
 
   const normalizedMovementStep = useMemo(
     () => Math.max(1, parseRoundedMathExpression(movementStep, resolvedExpressionVariables) ?? 1),
@@ -1500,7 +1471,7 @@ export function EditorApp() {
 
   function beginShapeCreation(pointer: Point) {
     if (!documentState) return
-    const layer = createShapeLayer({ x: pointer.x, y: pointer.y, width: 1, height: 1 }, shapeSettings)
+    const layer = createShapeLayer({ x: pointer.x, y: pointer.y, width: 1, height: 1 }, getShapeSettings())
     setDocumentState({
       ...documentState,
       layers: [...documentState.layers, layer],
@@ -1643,7 +1614,7 @@ export function EditorApp() {
 
   function updateShapeCreation(pointer: Point) {
     if (!interaction || interaction.type !== 'creating-shape' || !documentState) return
-    const rect = getShapeRectFromDrag(shapeSettings, interaction.start, pointer)
+    const rect = getShapeRectFromDrag(getShapeSettings(), interaction.start, pointer)
     setDocumentState(
       updateLayer(documentState, interaction.layerId, layer => {
         if (!isShapeLayer(layer)) return layer
@@ -2310,6 +2281,18 @@ export function EditorApp() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-base-100 text-base-content">
+      <EditorAutoSaveEffect
+        documentState={documentState}
+        history={history}
+        interactionActive={interaction !== null}
+        layerPositionDraft={layerPositionDraft}
+        layerSizeDraft={layerSizeDraft}
+        pasteSizeDraft={pasteSizeDraft}
+        projectName={projectName}
+        projectPath={projectPath}
+        saveProjectToPath={saveProjectToPath}
+        selectionDraft={selectionDraft}
+      />
       <div className="flex min-h-0 flex-1">
         <aside className="flex w-80 flex-col items-start gap-3 border-r border-base-content/10 px-3 py-4">
           <div className="flex gap-2 flex-wrap">
@@ -2425,73 +2408,7 @@ export function EditorApp() {
               </Accordion>
             </section>
 
-            <section>
-              <Accordion title="Shape Tool" defaultOpen>
-                <div className="space-y-3 bg-base-200/60 text-sm text-base-content/70">
-                  <div className="grid grid-cols-[auto_1fr] items-center gap-0">
-                    <Label>Type</Label>
-                    <Select
-                      options={[
-                        { label: 'Rectangle', value: 'rectangle' },
-                        { label: 'Circle', value: 'circle' },
-                        { label: 'Ellipse', value: 'ellipse' },
-                      ]}
-                      value={shapeSettings.shape}
-                      onChange={event =>
-                        setShapeSettings(current => ({
-                          ...current,
-                          shape: event as ShapeType,
-                        }))
-                      }
-                    />
-                    <Label>Fill</Label>
-                    <InputColor
-                      value={shapeSettings.fillColor}
-                      onChange={value => setShapeSettings(current => ({ ...current, fillColor: value }))}
-                    />
-                    <Label>Border</Label>
-                    <InputColor
-                      value={shapeSettings.borderColor}
-                      onChange={value => setShapeSettings(current => ({ ...current, borderColor: value }))}
-                    />
-                    <Label>Border Width</Label>
-
-                    <Input
-                      type="number"
-                      min={0}
-                      className="input input-xs"
-                      value={shapeSettings.borderWidth ?? 2}
-                      onChange={event =>
-                        setShapeSettings(current => ({
-                          ...current,
-                          borderWidth: Math.max(0, Math.round(Number(event) || 0)),
-                        }))
-                      }
-                    />
-                    <Label>Radius</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      className="input input-xs"
-                      value={shapeSettings.borderRadius}
-                      onChange={event =>
-                        setShapeSettings(current => ({
-                          ...current,
-                          borderRadius: Math.max(0, Math.round(Number(event) || 0)),
-                        }))
-                      }
-                    />
-                    <Label>Opacity</Label>
-                    <InputRange
-                      value={shapeSettings.opacity}
-                      onChange={event =>
-                        setShapeSettings(current => ({ ...current, opacity: clampShapeOpacity(Number(event)) }))
-                      }
-                    />
-                  </div>
-                </div>
-              </Accordion>
-            </section>
+            <ShapeToolSection />
 
             {documentState?.selection && selectionDraft && (
               <section>
