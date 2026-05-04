@@ -5,6 +5,7 @@ import { InputRange } from '@/lib/components/input-range'
 import { LabeledInput } from '@/lib/components/labeled-input'
 import { OneInputOneLine } from '@/lib/components/one-input-one-line'
 import { Select } from '@/lib/components/select'
+import { snapToStep } from '@common/TransformUtils'
 import { parseRoundedMathExpression } from '../utils/customVariableUtils'
 import { useDocumentStateStore, useHistoryStore } from './editorCoreStores'
 import {
@@ -76,10 +77,6 @@ function isShapeLayer(layer: EditorLayer): layer is ShapeLayer {
 
 function formatPixels(value: number): string {
   return `${Math.round(value)}`
-}
-
-function snapToStep(value: number, step: number): number {
-  return Math.round(value / step) * step
 }
 
 export function ActiveLayerInspectorSection() {

@@ -1,10 +1,7 @@
 import { EyeIcon, MinusIcon, PlusIcon } from 'lucide-react'
 import { Dialog } from '@/lib/components/dialog'
+import { clamp } from '@common/TransformUtils'
 import { updateImagePreviewDialogStoreValue, useImagePreviewDialogStore } from './editorSimpleStores'
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
-}
 
 function clampZoom(value: number): number {
   return clamp(Math.round(value * 100) / 100, 0.1, 16)

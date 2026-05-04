@@ -1,7 +1,5 @@
+import { clamp, normalizeRect, Point, Rect } from '@common/TransformUtils'
 import { ShapeLayer, ShapeType } from './types'
-
-export type Point = { x: number; y: number }
-export type Rect = { x: number; y: number; width: number; height: number }
 
 export type ShapeSettingsState = {
   shape: ShapeType
@@ -10,23 +8,6 @@ export type ShapeSettingsState = {
   borderRadius: number
   borderWidth?: number
   opacity: number
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
-}
-
-function normalizeRect(start: Point, end: Point): Rect {
-  const left = Math.min(start.x, end.x)
-  const top = Math.min(start.y, end.y)
-  const right = Math.max(start.x, end.x)
-  const bottom = Math.max(start.y, end.y)
-  return {
-    x: left,
-    y: top,
-    width: Math.max(1, right - left),
-    height: Math.max(1, bottom - top),
-  }
 }
 
 export function clampShapeOpacity(value: number): number {

@@ -1,17 +1,11 @@
+import { clamp, Point } from '@common/TransformUtils'
 import { HighlightLayer, HighlightBrushShape } from './types'
-
-export type Point = { x: number; y: number }
-export type Rect = { x: number; y: number; width: number; height: number }
 
 export type HighlightSettingsState = {
   color: string
   opacity: number
   brushShape: HighlightBrushShape
   brushSize: number
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
 }
 
 export function clampHighlightOpacity(value: number): number {

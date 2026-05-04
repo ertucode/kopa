@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import useMeasure from 'react-use-measure'
 import {
   FolderOpenIcon,
@@ -14,7 +14,7 @@ import { ContextMenu, ContextMenuList, useContextMenu } from '@/lib/components/c
 import { useShortcuts } from '@/lib/hooks/useShortcuts'
 import { cn } from '@/lib/functions/clsx'
 import { getWindowElectron, windowArgs } from '@/getWindowElectron'
-import { RecentEditorProject } from '@common/EditorProject'
+import { clamp, normalizeRect, Point, pointInRect, Rect, snapToStep } from '@common/TransformUtils'
 import { createLayerFromFile, cutSelectionFromDocument, loadImageElement } from './raster'
 import { deserializeProject, serializeProject } from './projectPersistence'
 import {
@@ -72,6 +72,14 @@ import {
   getShapeSettingsStoreValue,
   getHighlightSettingsStoreValue,
   updateErrorMessageStoreValue,
+  useInteractionStore,
+  useSelectionPreviewStore,
+  useIsSavingStore,
+  useIsProjectSavingStore,
+  useProjectPathStore,
+  useProjectNameStore,
+  useRecentProjectsStore,
+  useImageRevisionStore,
 } from './editorSimpleStores'
 import {
   EditorHistoryState,
@@ -112,58 +120,6 @@ const DOCUMENT_PRESETS: NewDocumentPreset[] = [
   { label: 'Full HD', width: 1920, height: 1080 },
   { label: 'Poster', width: 2048, height: 2048 },
 ]
-
-type InteractionState =
-  | {
-      type: 'moving-layer'
-      initialDocument: EditorDocument
-      layerId: string
-      pointerStart: Point
-      layerStart: Rect
-    }
-  | {
-      type: 'resizing-layer'
-      initialDocument: EditorDocument
-      layerId: string
-      handle: ResizeHandle
-      pointerStart: Point
-      layerStart: Rect
-      aspectRatio: number
-    }
-  | {
-      type: 'creating-selection'
-      initialDocument: EditorDocument
-      start: Point
-    }
-  | {
-      type: 'creating-highlight'
-      initialDocument: EditorDocument
-      layerId: string
-      start: Point
-      axisLock: 'x' | 'y' | null
-    }
-  | {
-      type: 'creating-shape'
-      initialDocument: EditorDocument
-      layerId: string
-      start: Point
-    }
-  | {
-      type: 'moving-selection'
-      initialDocument: EditorDocument
-      selectionStart: PixelSelection
-      pointerStart: Point
-      floatingDataUrl: string
-    }
-  | null
-
-type Point = { x: number; y: number }
-type Rect = { x: number; y: number; width: number; height: number }
-
-type SelectionPreview = {
-  floatingDataUrl: string
-  selection: PixelSelection
-}
 
 type CanvasContextMenuItem =
   | {
@@ -219,27 +175,6 @@ function updateLayer(
     ...documentState,
     layers: documentState.layers.map(layer => (layer.id === layerId ? updater(layer) : layer)),
   }
-}
-
-function pointInRect(point: Point, rect: Rect): boolean {
-  return point.x >= rect.x && point.y >= rect.y && point.x <= rect.x + rect.width && point.y <= rect.y + rect.height
-}
-
-function normalizeRect(start: Point, end: Point): Rect {
-  const left = Math.min(start.x, end.x)
-  const top = Math.min(start.y, end.y)
-  const right = Math.max(start.x, end.x)
-  const bottom = Math.max(start.y, end.y)
-  return {
-    x: left,
-    y: top,
-    width: Math.max(1, right - left),
-    height: Math.max(1, bottom - top),
-  }
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
 }
 
 function getLayerRect(layer: EditorLayer): Rect {
@@ -317,16 +252,12 @@ function selectionFromDrag(documentState: EditorDocument, start: Point, current:
   return clampSelectionToDocument(normalized, documentState)
 }
 
-function snapToStep(value: number, step: number): number {
-  return Math.round(value / step) * step
-}
-
 export function EditorApp() {
   const [documentState, setDocumentState] = useDocumentStateStore()
   const [history, setHistory] = useHistoryStore()
   const [tool, setTool] = useToolStore()
-  const [interaction, setInteraction] = useState<InteractionState>(null)
-  const [selectionPreview, setSelectionPreview] = useState<SelectionPreview | null>(null)
+  const [interaction, setInteraction] = useInteractionStore()
+  const [selectionPreview, setSelectionPreview] = useSelectionPreviewStore()
   const [canvasDraft, setCanvasDraft] = useCanvasDraftStore()
   const [pasteSizeDraft, setPasteSizeDraft] = usePasteSizeDraftStore()
   const [movementStep, setMovementStep] = useMovementStepStore()
@@ -336,18 +267,18 @@ export function EditorApp() {
   const [layerSizeDraft, setLayerSizeDraft] = useLayerSizeDraftStore()
   const [selectionDraft, setSelectionDraft] = useSelectionDraftStore()
   const [projectNameDraft, setProjectNameDraft] = useProjectNameDraftStore()
-  const [isSaving, setIsSaving] = useState(false)
-  const [isProjectSaving, setIsProjectSaving] = useState(false)
-  const [projectPath, setProjectPath] = useState<string | null>(null)
-  const [projectName, setProjectName] = useState('Untitled Project')
-  const [recentProjects, setRecentProjects] = useState<RecentEditorProject[]>([])
+  const [isSaving, setIsSaving] = useIsSavingStore()
+  const [isProjectSaving, setIsProjectSaving] = useIsProjectSavingStore()
+  const [projectPath, setProjectPath] = useProjectPathStore()
+  const [projectName, setProjectName] = useProjectNameStore()
+  const [recentProjects, setRecentProjects] = useRecentProjectsStore()
   const hasUnsavedChanges = useHasUnsavedChangesStoreValue()
   const [viewportRef, viewportBounds] = useMeasure()
   const inputRef = useRef<HTMLInputElement>(null)
   const mainCanvasRef = useRef<HTMLCanvasElement>(null)
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null)
   const imageCacheRef = useRef(new Map<string, HTMLImageElement>())
-  const [imageRevision, setImageRevision] = useState(0)
+  const [imageRevision, setImageRevision] = useImageRevisionStore()
 
   const activeLayer = useActiveLayerValue()
   const resolvedCustomVariables = useResolvedCustomVariablesValue()
