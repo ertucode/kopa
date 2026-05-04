@@ -7,7 +7,6 @@ import {
   Redo2Icon,
   SaveIcon,
   ScanLineIcon,
-  Trash2Icon,
   Undo2Icon,
 } from 'lucide-react'
 import { Button } from '@/lib/components/button'
@@ -90,7 +89,7 @@ import { EditorAutoSaveEffect } from './EditorAutoSaveEffect'
 import { HighlightToolSection } from './HighlightToolSection'
 import { ImagePreviewDialog } from './ImagePreviewDialog'
 import { EditorErrorDialog } from './EditorErrorDialog'
-import { FormWithInlineApply, InlineButton } from './form/FormWithInlineApply'
+import { FormWithInlineApply } from './form/FormWithInlineApply'
 import { OneInputOneLine } from '@/lib/components/one-input-one-line'
 import { Input } from '@/lib/components/input'
 
