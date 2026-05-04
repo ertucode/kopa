@@ -96,7 +96,6 @@ import {
   useSelectionExpressionVariablesValue,
 } from './editorDerivedValues'
 import { pendingDraftSyncRef } from './editorDraftSyncState'
-import { Accordion } from '@/lib/components/accordion'
 import {
   isHydratingProjectRef,
   updateHasUnsavedChangesStoreValue,
@@ -111,8 +110,7 @@ import { SelectionSection } from './SelectionSection'
 import { DocumentSettingsSection } from './DocumentSettingsSection'
 import { ActiveLayerInspectorSection } from './ActiveLayerInspectorSection'
 import { ObjectsListSection } from './ObjectsListSection'
-import { OneInputOneLine } from '@/lib/components/one-input-one-line'
-import { Input } from '@/lib/components/input'
+import { VariablesSection } from './VariablesSection'
 
 const DOCUMENT_PRESETS: NewDocumentPreset[] = [
   { label: 'Avatar', width: 512, height: 512 },
@@ -2174,77 +2172,15 @@ export function EditorApp() {
 
               <ActiveLayerInspectorSection />
 
-              <section>
-                <Accordion title="Variables" defaultOpen>
-                  <div className="space-y-3 bg-base-200/60 text-sm text-base-content/70">
-                    {customVariables.map(variable => {
-                      const trimmedName = variable.name.trim()
-                      const resolvedValue = trimmedName ? resolvedExpressionVariables[trimmedName] : undefined
-                      const error = resolvedCustomVariables.errors[variable.id]
-
-                      return (
-                        <div className="flex flex-col gap-2 border-b border-base-content/20 pb-2">
-                          <form
-                            key={variable.id}
-                            className="flex flex-col gap-2"
-                            onSubmit={e => {
-                              e.preventDefault()
-                              applyCustomVariables()
-                            }}
-                          >
-                            <div>
-                              <OneInputOneLine label="Name">
-                                <Input
-                                  value={variable.name}
-                                  onChange={event => updateCustomVariable(variable.id, { name: event })}
-                                  placeholder="tileSize"
-                                />
-                              </OneInputOneLine>
-                              <OneInputOneLine label="Expression">
-                                <Input
-                                  value={variable.expression}
-                                  onChange={event => updateCustomVariable(variable.id, { expression: event })}
-                                  placeholder="canvasWidth / 4"
-                                />
-                              </OneInputOneLine>
-                            </div>
-                            <div className="flex">
-                              <Button
-                                type="button"
-                                className="btn-xs btn-soft flex-1 rounded-none"
-                                onClick={() => removeCustomVariable(variable.id)}
-                              >
-                                Delete
-                              </Button>
-                              <Button
-                                className="btn-xs btn-soft flex-1 rounded-none"
-                                disabled={Object.keys(resolvedCustomVariables.errors).length > 0}
-                              >
-                                Save
-                              </Button>
-                            </div>
-                          </form>
-
-                          {error ? (
-                            <div className="text-xs text-base-content/55">{error}</div>
-                          ) : trimmedName && resolvedValue !== undefined ? (
-                            <OneInputOneLine label="Value">
-                              <div className="text-xs">{resolvedValue}</div>
-                            </OneInputOneLine>
-                          ) : (
-                            <div className={cn('text-xs', error ? 'text-error' : 'text-base-content/55')}>
-                              Enter a variable name and expression
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                    <Button type="button" onClick={addCustomVariable} className="btn-xs btn-soft w-full rounded-none">
-                      Add Variable
-                    </Button>
-                  </div>
-                </Accordion>
-              </section>
+              <VariablesSection
+                customVariables={customVariables}
+                resolvedCustomVariableErrors={resolvedCustomVariables.errors}
+                resolvedExpressionVariables={resolvedExpressionVariables}
+                onApplyCustomVariables={applyCustomVariables}
+                onAddCustomVariable={addCustomVariable}
+                onUpdateCustomVariable={updateCustomVariable}
+                onRemoveCustomVariable={removeCustomVariable}
+              />
 
               <ObjectsListSection />
             </aside>
