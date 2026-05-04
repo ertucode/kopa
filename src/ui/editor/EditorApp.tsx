@@ -83,7 +83,6 @@ import {
 } from './editorSimpleStores'
 import { Typescript } from '@common/Typescript'
 import { Accordion } from '@/lib/components/accordion'
-import { Label } from '@/lib/components/label'
 import { LabeledInput } from '@/lib/components/labeled-input'
 import {
   isHydratingProjectRef,

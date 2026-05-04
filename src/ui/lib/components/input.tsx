@@ -10,7 +10,7 @@ export function Input({ className, onChange, ...props }: InputProps) {
   return (
     <input
       {...props}
-      className={clsx('input input-xs rounded-none outline-1 outline-offset-0', className)}
+      className={clsx('input input-xs rounded-none focus-within:outline-1 outline-offset-0', className)}
       onChange={event => onChange(event.target.value)}
     />
   )

@@ -7,7 +7,7 @@ export type SelectProps = {
 export function Select({ options, value, onChange }: SelectProps) {
   return (
     <select
-      className="select select-xs rounded-none outline-1 outline-offset-0"
+      className="select select-xs rounded-none focus-within:outline-1 outline-offset-0"
       value={value}
       onChange={event => onChange(event.target.value)}
     >
