@@ -1,12 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import useMeasure from 'react-use-measure'
 import {
-  EyeIcon,
   FolderOpenIcon,
   ImagePlusIcon,
-  MinusIcon,
   MousePointer2Icon,
-  PlusIcon,
   Redo2Icon,
   SaveIcon,
   ScanLineIcon,
@@ -14,7 +11,6 @@ import {
   Undo2Icon,
 } from 'lucide-react'
 import { Button } from '@/lib/components/button'
-import { Dialog } from '@/lib/components/dialog'
 import { ContextMenu, ContextMenuList, useContextMenu } from '@/lib/components/context-menu'
 import { useShortcuts } from '@/lib/hooks/useShortcuts'
 import { cn } from '@/lib/functions/clsx'
@@ -74,7 +70,7 @@ import {
 import {
   useCanvasDraftStore,
   useCustomVariablesStore,
-  useErrorMessageStore,
+  updateImagePreviewDialogStoreValue,
   useMovementStepDraftStore,
   useMovementStepStore,
   useProjectNameDraftStore,
@@ -83,6 +79,7 @@ import {
   updateHighlightSettingsStoreValue,
   getShapeSettingsStoreValue,
   getHighlightSettingsStoreValue,
+  updateErrorMessageStoreValue,
 } from './editorSimpleStores'
 import { Typescript } from '@common/Typescript'
 import { Accordion } from '@/lib/components/accordion'
@@ -96,6 +93,8 @@ import {
 import { ShapeToolSection } from './ShapeToolSection'
 import { EditorAutoSaveEffect } from './EditorAutoSaveEffect'
 import { HighlightToolSection } from './HighlightToolSection'
+import { ImagePreviewDialog } from './ImagePreviewDialog'
+import { EditorErrorDialog } from './EditorErrorDialog'
 
 const DOCUMENT_PRESETS: NewDocumentPreset[] = [
   { label: 'Avatar', width: 512, height: 512 },
@@ -150,24 +149,6 @@ type InteractionState =
 
 type Point = { x: number; y: number }
 type Rect = { x: number; y: number; width: number; height: number }
-
-type SizeDialogState = {
-  layerId: string
-  width: string
-  height: string
-  keepAspectRatio: boolean
-}
-
-type PositionDialogState = {
-  layerId: string
-  x: string
-  y: string
-}
-
-type ImagePreviewDialogState = {
-  layerId: string
-  zoom: number
-}
 
 type SelectionPreview = {
   floatingDataUrl: string
@@ -393,10 +374,6 @@ function snapToStep(value: number, step: number): number {
   return Math.round(value / step) * step
 }
 
-function clampZoom(value: number): number {
-  return clamp(Math.round(value * 100) / 100, 0.1, 16)
-}
-
 function moveArrayItem<T>(items: T[], fromIndex: number, toIndex: number): T[] {
   const nextItems = [...items]
   const [item] = nextItems.splice(fromIndex, 1)
@@ -411,9 +388,6 @@ export function EditorApp() {
   const [tool, setTool] = useToolStore()
   const [interaction, setInteraction] = useState<InteractionState>(null)
   const [selectionPreview, setSelectionPreview] = useState<SelectionPreview | null>(null)
-  const [sizeDialog, setSizeDialog] = useState<SizeDialogState | null>(null)
-  const [positionDialog, setPositionDialog] = useState<PositionDialogState | null>(null)
-  const [imagePreviewDialog, setImagePreviewDialog] = useState<ImagePreviewDialogState | null>(null)
   const [canvasDraft, setCanvasDraft] = useCanvasDraftStore()
   const [pasteSizeDraft, setPasteSizeDraft] = useState<PasteSizeDraftState>({ width: '', height: '' })
   const [movementStep, setMovementStep] = useMovementStepStore()
@@ -423,7 +397,6 @@ export function EditorApp() {
   const [layerSizeDraft, setLayerSizeDraft] = useState<LayerSizeDraftState | null>(null)
   const [selectionDraft, setSelectionDraft] = useState<SelectionDraftState | null>(null)
   const [projectNameDraft, setProjectNameDraft] = useProjectNameDraftStore()
-  const [errorMessage, setErrorMessage] = useErrorMessageStore()
   const [isSaving, setIsSaving] = useState(false)
   const [isProjectSaving, setIsProjectSaving] = useState(false)
   const [projectPath, setProjectPath] = useState<string | null>(null)
@@ -518,7 +491,7 @@ export function EditorApp() {
     }
     setInteraction(null)
     setSelectionPreview(null)
-    setImagePreviewDialog(null)
+    updateImagePreviewDialogStoreValue(null)
     setLayerPositionDraft(args.nextLayerPositionDraft)
     setLayerSizeDraft(args.nextLayerSizeDraft)
     setSelectionDraft(args.nextSelectionDraft)
@@ -530,7 +503,7 @@ export function EditorApp() {
     try {
       setRecentProjects(await getWindowElectron().getRecentEditorProjects())
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to load recent projects')
+      updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to load recent projects')
     }
   }
 
@@ -567,7 +540,7 @@ export function EditorApp() {
       })
       await refreshRecentProjects()
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to open editor project')
+      updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to open editor project')
     }
   }
 
@@ -604,7 +577,7 @@ export function EditorApp() {
       updateHasUnsavedChangesStoreValue(false)
       await refreshRecentProjects()
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to save editor project')
+      updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to save editor project')
     } finally {
       setIsProjectSaving(false)
     }
@@ -645,7 +618,7 @@ export function EditorApp() {
         await refreshRecentProjects()
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to save editor project')
+      updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to save editor project')
     } finally {
       setIsProjectSaving(false)
     }
@@ -692,7 +665,7 @@ export function EditorApp() {
       })
       await refreshRecentProjects()
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to open editor project')
+      updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to open editor project')
     }
   }
 
@@ -726,7 +699,7 @@ export function EditorApp() {
   function applyProjectName() {
     const nextProjectName = projectNameDraft.value.trim()
     if (!nextProjectName) {
-      setErrorMessage('Project name cannot be empty')
+      updateErrorMessageStoreValue('Project name cannot be empty')
       return
     }
 
@@ -745,7 +718,7 @@ export function EditorApp() {
     const parsedMovementStep = parseRoundedMathExpression(movementStepDraft, movementStepVariables)
     const nextMovementStep = Math.max(1, parsedMovementStep ?? Number.NaN)
     if (!Number.isFinite(nextMovementStep)) {
-      setErrorMessage('Movement step must be a valid number or math expression')
+      updateErrorMessageStoreValue('Movement step must be a valid number or math expression')
       return
     }
     setMovementStep(String(nextMovementStep))
@@ -767,7 +740,7 @@ export function EditorApp() {
 
   function applyCustomVariables() {
     if (Object.keys(resolvedCustomVariables.errors).length > 0) {
-      setErrorMessage('Fix variable errors before applying them')
+      updateErrorMessageStoreValue('Fix variable errors before applying them')
       return
     }
 
@@ -1219,11 +1192,15 @@ export function EditorApp() {
     const pasteWidth = parsedWidth === null ? null : Math.max(1, parsedWidth)
     const pasteHeight = parsedHeight === null ? null : Math.max(1, parsedHeight)
     if ((hasWidth && pasteWidth === null) || (hasHeight && pasteHeight === null)) {
-      setErrorMessage('Paste width and height must be valid numbers or simple math expressions when provided')
+      updateErrorMessageStoreValue(
+        'Paste width and height must be valid numbers or simple math expressions when provided'
+      )
       return
     }
     if ((hasWidth && !Number.isFinite(pasteWidth)) || (hasHeight && !Number.isFinite(pasteHeight))) {
-      setErrorMessage('Paste width and height must be valid numbers or simple math expressions when provided')
+      updateErrorMessageStoreValue(
+        'Paste width and height must be valid numbers or simple math expressions when provided'
+      )
       return
     }
 
@@ -1253,7 +1230,7 @@ export function EditorApp() {
       }
       pushHistory(imageFiles.length > 1 ? 'Place images' : 'Place image', documentState, nextDocument)
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to import image')
+      updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to import image')
     }
   }
 
@@ -1805,107 +1782,16 @@ export function EditorApp() {
     cancelInteraction()
   }
 
-  function openSizeDialog(layerId: string) {
-    const layer = documentState?.layers.find(item => item.id === layerId)
-    if (!layer || isHighlightLayer(layer)) return
-    setSizeDialog({
-      layerId,
-      width: String(Math.round(layer.width)),
-      height: String(Math.round(layer.height)),
-      keepAspectRatio: isImageLayer(layer),
-    })
-  }
-
-  function openPositionDialog(layerId: string) {
-    const layer = documentState?.layers.find(item => item.id === layerId)
-    if (!layer) return
-    setPositionDialog({
-      layerId,
-      x: String(Math.round(layer.x)),
-      y: String(Math.round(layer.y)),
-    })
-  }
-
   function openImagePreviewDialog(layerId: string) {
     const layer = documentState?.layers.find(item => item.id === layerId)
     if (!layer || !isImageLayer(layer)) return
-    setImagePreviewDialog({
-      layerId,
+    updateImagePreviewDialogStoreValue({
+      name: layer.name,
+      dataUrl: layer.dataUrl,
+      pixelWidth: layer.pixelWidth,
+      pixelHeight: layer.pixelHeight,
       zoom: 1,
     })
-  }
-
-  function applyExactSize() {
-    if (!documentState || !sizeDialog) return
-    const layer = documentState.layers.find(item => item.id === sizeDialog.layerId)
-    if (!layer || isHighlightLayer(layer)) return
-
-    const sizeDialogVariables: ExpressionVariables = {
-      ...resolvedExpressionVariables,
-      imageX: layer.x,
-      imageY: layer.y,
-      imageWidth: layer.width,
-      imageHeight: layer.height,
-    }
-    let width = Math.max(1, parseRoundedMathExpression(sizeDialog.width, sizeDialogVariables) ?? Number.NaN)
-    let height = Math.max(1, parseRoundedMathExpression(sizeDialog.height, sizeDialogVariables) ?? Number.NaN)
-    if (!Number.isFinite(width) || !Number.isFinite(height)) {
-      setErrorMessage('Width and height must be valid numbers or simple math expressions')
-      return
-    }
-
-    if (isShapeLayer(layer) && layer.shape === 'circle') {
-      const size = Math.max(width, height)
-      width = size
-      height = size
-    } else if (sizeDialog.keepAspectRatio && isImageLayer(layer)) {
-      const ratio = layer.width / layer.height
-      if (parseRoundedMathExpression(sizeDialog.width, sizeDialogVariables) !== Math.round(layer.width)) {
-        height = Math.max(1, Math.round(width / ratio))
-      } else {
-        width = Math.max(1, Math.round(height * ratio))
-      }
-    }
-
-    const nextDocument = updateLayer(documentState, layer.id, currentLayer => ({
-      ...currentLayer,
-      width,
-      height,
-    }))
-
-    pushHistory('Set exact size', documentState, nextDocument)
-    setSizeDialog(null)
-  }
-
-  function applyExactPosition() {
-    if (!documentState || !positionDialog) return
-    const layer = documentState.layers.find(item => item.id === positionDialog.layerId)
-    if (!layer) return
-
-    const positionDialogVariables: ExpressionVariables = {
-      ...resolvedExpressionVariables,
-      imageX: layer.x,
-      imageY: layer.y,
-      imageWidth: layer.width,
-      imageHeight: layer.height,
-    }
-    const parsedX = parseRoundedMathExpression(positionDialog.x, positionDialogVariables)
-    const parsedY = parseRoundedMathExpression(positionDialog.y, positionDialogVariables)
-    const x = snapToStep(parsedX ?? Number.NaN, normalizedMovementStep)
-    const y = snapToStep(parsedY ?? Number.NaN, normalizedMovementStep)
-    if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      setErrorMessage('Position coordinates must be valid numbers or simple math expressions')
-      return
-    }
-
-    const nextDocument = updateLayer(documentState, layer.id, currentLayer => ({
-      ...currentLayer,
-      x,
-      y,
-    }))
-
-    pushHistory('Set exact position', documentState, nextDocument)
-    setPositionDialog(null)
   }
 
   function applyInspectorPosition() {
@@ -1916,7 +1802,7 @@ export function EditorApp() {
     const x = snapToStep(parsedX ?? Number.NaN, normalizedMovementStep)
     const y = snapToStep(parsedY ?? Number.NaN, normalizedMovementStep)
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      setErrorMessage('Position coordinates must be valid numbers or simple math expressions')
+      updateErrorMessageStoreValue('Position coordinates must be valid numbers or simple math expressions')
       return
     }
 
@@ -1953,7 +1839,7 @@ export function EditorApp() {
       height = size
     }
     if (!Number.isFinite(width) || !Number.isFinite(height)) {
-      setErrorMessage('Width and height must be valid numbers or simple math expressions')
+      updateErrorMessageStoreValue('Width and height must be valid numbers or simple math expressions')
       return
     }
 
@@ -2002,7 +1888,7 @@ export function EditorApp() {
     const x = parseRoundedMathExpression(selectionDraft.x, selectionExpressionVariables) ?? Number.NaN
     const y = parseRoundedMathExpression(selectionDraft.y, selectionExpressionVariables) ?? Number.NaN
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      setErrorMessage('Selection coordinates must be valid numbers or simple math expressions')
+      updateErrorMessageStoreValue('Selection coordinates must be valid numbers or simple math expressions')
       return
     }
 
@@ -2034,7 +1920,7 @@ export function EditorApp() {
       parseRoundedMathExpression(selectionDraft.height, selectionExpressionVariables) ?? Number.NaN
     )
     if (!Number.isFinite(width) || !Number.isFinite(height)) {
-      setErrorMessage('Selection width and height must be valid numbers or simple math expressions')
+      updateErrorMessageStoreValue('Selection width and height must be valid numbers or simple math expressions')
       return
     }
 
@@ -2057,7 +1943,7 @@ export function EditorApp() {
   async function copySelectionToClipboard() {
     if (!documentState?.selection || !mainCanvasRef.current) return
     if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) {
-      setErrorMessage('Image clipboard copy is not available in this environment')
+      updateErrorMessageStoreValue('Image clipboard copy is not available in this environment')
       return
     }
 
@@ -2090,7 +1976,7 @@ export function EditorApp() {
 
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to copy selection to clipboard')
+      updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to copy selection to clipboard')
     }
   }
 
@@ -2124,7 +2010,7 @@ export function EditorApp() {
       const defaultFileName = `kopa-selection-${selection.width}x${selection.height}.png`
       await getWindowElectron().saveFinalImage({ dataUrl, defaultFileName })
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to save selection image')
+      updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to save selection image')
     } finally {
       setIsSaving(false)
     }
@@ -2139,7 +2025,7 @@ export function EditorApp() {
       const defaultFileName = `kopa-${documentState.width}x${documentState.height}.png`
       await getWindowElectron().saveFinalImage({ dataUrl, defaultFileName })
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to save image')
+      updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to save image')
     } finally {
       setIsSaving(false)
     }
@@ -2188,7 +2074,7 @@ export function EditorApp() {
       parseRoundedMathExpression(canvasDraft.height, resolvedExpressionVariables) ?? Number.NaN
     )
     if (!Number.isFinite(width) || !Number.isFinite(height)) {
-      setErrorMessage('Canvas size must be valid numbers or simple math expressions')
+      updateErrorMessageStoreValue('Canvas size must be valid numbers or simple math expressions')
       return
     }
     setCanvasSize(width, height)
@@ -2199,13 +2085,6 @@ export function EditorApp() {
   const contextLayerId = layerMenu.item?.type === 'layer' ? layerMenu.item.layerId : selectionContextLayerId
   const contextLayer =
     contextLayerId && documentState ? (documentState.layers.find(layer => layer.id === contextLayerId) ?? null) : null
-  const previewLayer =
-    imagePreviewDialog && documentState
-      ? (() => {
-          const layer = documentState.layers.find(item => item.id === imagePreviewDialog.layerId) ?? null
-          return layer && isImageLayer(layer) ? layer : null
-        })()
-      : null
   const menuItems =
     layerMenu.item?.type === 'selection'
       ? [
@@ -2232,18 +2111,6 @@ export function EditorApp() {
               }
             : null,
           contextLayerId ? { isSeparator: true as const } : null,
-          contextLayerId
-            ? {
-                view: 'Set Position...',
-                onClick: () => openPositionDialog(contextLayerId),
-              }
-            : null,
-          contextLayer && !isHighlightLayer(contextLayer)
-            ? {
-                view: 'Set Size...',
-                onClick: () => openSizeDialog(contextLayer.id),
-              }
-            : null,
         ]
       : layerMenu.item?.type === 'layer' && contextLayer
         ? [
@@ -2258,17 +2125,6 @@ export function EditorApp() {
               view: 'Delete Object',
               onClick: () => deleteLayer(contextLayer.id),
             },
-            { isSeparator: true as const },
-            {
-              view: 'Set Position...',
-              onClick: () => openPositionDialog(contextLayer.id),
-            },
-            !isHighlightLayer(contextLayer)
-              ? {
-                  view: 'Set Size...',
-                  onClick: () => openSizeDialog(contextLayer.id),
-                }
-              : null,
           ]
         : []
 
@@ -3204,285 +3060,8 @@ export function EditorApp() {
         </main>
       </div>
 
-      {sizeDialog && (
-        <Dialog title="Set Object Size" onClose={() => setSizeDialog(null)} className="max-w-md">
-          <form
-            className="flex flex-col gap-4"
-            onSubmit={event => {
-              event.preventDefault()
-              applyExactSize()
-            }}
-          >
-            <p className="text-sm text-base-content/70">
-              Use math and variables like `imageWidth`, `imageHeight`, `canvasWidth`, and `canvasHeight`.
-            </p>
-            <label className="form-control gap-2">
-              <span className="label">Width</span>
-              <input
-                className="input"
-                value={sizeDialog.width}
-                onChange={event => {
-                  const nextWidth = event.target.value
-                  setSizeDialog(current => {
-                    if (!current) return current
-                    const layer = documentState?.layers.find(item => item.id === current.layerId)
-                    if (!layer) return { ...current, width: nextWidth }
-                    if (!current.keepAspectRatio) {
-                      return { ...current, width: nextWidth }
-                    }
-                    const width = parseRoundedMathExpression(nextWidth, {
-                      ...resolvedExpressionVariables,
-                      imageX: layer.x,
-                      imageY: layer.y,
-                      imageWidth: layer.width,
-                      imageHeight: layer.height,
-                    })
-                    if (width === null || !Number.isFinite(width)) {
-                      return { ...current, width: nextWidth }
-                    }
-                    return {
-                      ...current,
-                      width: nextWidth,
-                      height: String(Math.max(1, Math.round(width / (layer.width / layer.height)))),
-                    }
-                  })
-                }}
-              />
-            </label>
-            <label className="form-control gap-2">
-              <span className="label">Height</span>
-              <input
-                className="input"
-                value={sizeDialog.height}
-                onChange={event => {
-                  const nextHeight = event.target.value
-                  setSizeDialog(current => {
-                    if (!current) return current
-                    const layer = documentState?.layers.find(item => item.id === current.layerId)
-                    if (!layer) return { ...current, height: nextHeight }
-                    if (!current.keepAspectRatio) {
-                      return { ...current, height: nextHeight }
-                    }
-                    const height = parseRoundedMathExpression(nextHeight, {
-                      ...resolvedExpressionVariables,
-                      imageX: layer.x,
-                      imageY: layer.y,
-                      imageWidth: layer.width,
-                      imageHeight: layer.height,
-                    })
-                    if (height === null || !Number.isFinite(height)) {
-                      return { ...current, height: nextHeight }
-                    }
-                    return {
-                      ...current,
-                      height: nextHeight,
-                      width: String(Math.max(1, Math.round(height * (layer.width / layer.height)))),
-                    }
-                  })
-                }}
-              />
-            </label>
-            {(() => {
-              const layer = documentState?.layers.find(item => item.id === sizeDialog.layerId)
-              return layer && isImageLayer(layer) ? (
-                <label className="label cursor-pointer justify-start gap-3">
-                  <input
-                    type="checkbox"
-                    className="checkbox"
-                    checked={sizeDialog.keepAspectRatio}
-                    onChange={event =>
-                      setSizeDialog(current =>
-                        current ? { ...current, keepAspectRatio: event.target.checked } : current
-                      )
-                    }
-                  />
-                  Keep aspect ratio
-                </label>
-              ) : null
-            })()}
-            <div className="modal-action mt-0">
-              <button type="submit" className="btn btn-primary">
-                Apply
-              </button>
-              <button type="button" className="btn" onClick={() => setSizeDialog(null)}>
-                Cancel
-              </button>
-            </div>
-          </form>
-        </Dialog>
-      )}
-
-      {positionDialog && (
-        <Dialog title="Set Object Placement" onClose={() => setPositionDialog(null)} className="max-w-md">
-          <form
-            className="flex flex-col gap-4"
-            onSubmit={event => {
-              event.preventDefault()
-              applyExactPosition()
-            }}
-          >
-            <p className="text-sm text-base-content/70">
-              Coordinates use the top-left corner of the selected object on the document canvas. Use math and variables
-              like `imageX`, `imageY`, `canvasWidth`, and `canvasHeight`.
-            </p>
-            <label className="form-control gap-2">
-              <span className="label">X</span>
-              <input
-                className="input"
-                value={positionDialog.x}
-                onChange={event =>
-                  setPositionDialog(current => (current ? { ...current, x: event.target.value } : current))
-                }
-              />
-            </label>
-            <label className="form-control gap-2">
-              <span className="label">Y</span>
-              <input
-                className="input"
-                value={positionDialog.y}
-                onChange={event =>
-                  setPositionDialog(current => (current ? { ...current, y: event.target.value } : current))
-                }
-              />
-            </label>
-            <div className="modal-action mt-0">
-              <button type="submit" className="btn btn-primary">
-                Apply
-              </button>
-              <button type="button" className="btn" onClick={() => setPositionDialog(null)}>
-                Cancel
-              </button>
-            </div>
-          </form>
-        </Dialog>
-      )}
-
-      {imagePreviewDialog && previewLayer && (
-        <Dialog
-          title={`Preview Image: ${previewLayer.name}`}
-          onClose={() => setImagePreviewDialog(null)}
-          className="h-[90vh] w-[90vw] max-h-[90vh] max-w-[90vw]"
-        >
-          <div className="flex h-full min-h-0 flex-col gap-4">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost btn-square"
-                onClick={() =>
-                  setImagePreviewDialog(current =>
-                    current
-                      ? {
-                          ...current,
-                          zoom: clampZoom(current.zoom / 1.25),
-                        }
-                      : current
-                  )
-                }
-                title="Zoom out"
-              >
-                <MinusIcon className="size-4" />
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost btn-square"
-                onClick={() =>
-                  setImagePreviewDialog(current =>
-                    current
-                      ? {
-                          ...current,
-                          zoom: 1,
-                        }
-                      : current
-                  )
-                }
-                title="Reset zoom"
-              >
-                <EyeIcon className="size-4" />
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost btn-square"
-                onClick={() =>
-                  setImagePreviewDialog(current =>
-                    current
-                      ? {
-                          ...current,
-                          zoom: clampZoom(current.zoom * 1.25),
-                        }
-                      : current
-                  )
-                }
-                title="Zoom in"
-              >
-                <PlusIcon className="size-4" />
-              </button>
-              <div className="min-w-20 text-sm text-base-content/70">{Math.round(imagePreviewDialog.zoom * 100)}%</div>
-              <input
-                type="range"
-                min="10"
-                max="1600"
-                step="10"
-                className="range range-xs flex-1"
-                value={Math.round(imagePreviewDialog.zoom * 100)}
-                onChange={event =>
-                  setImagePreviewDialog(current =>
-                    current
-                      ? {
-                          ...current,
-                          zoom: clampZoom(Number(event.target.value) / 100),
-                        }
-                      : current
-                  )
-                }
-              />
-            </div>
-            <div className="text-xs text-base-content/55">
-              Use the slider, buttons, or mouse wheel while hovering the preview.
-            </div>
-            <div
-              className="min-h-0 flex-1 overflow-auto rounded-2xl border border-base-content/10 bg-[#11141b] p-4"
-              onWheel={event => {
-                event.preventDefault()
-                const direction = event.deltaY < 0 ? 1.1 : 1 / 1.1
-                setImagePreviewDialog(current =>
-                  current
-                    ? {
-                        ...current,
-                        zoom: clampZoom(current.zoom * direction),
-                      }
-                    : current
-                )
-              }}
-            >
-              <div className="flex min-h-[24rem] min-w-full items-center justify-center">
-                <img
-                  src={previewLayer.dataUrl}
-                  alt={previewLayer.name}
-                  className="max-w-none select-none"
-                  draggable={false}
-                  style={{
-                    width: previewLayer.pixelWidth * imagePreviewDialog.zoom,
-                    height: previewLayer.pixelHeight * imagePreviewDialog.zoom,
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-        </Dialog>
-      )}
-
-      {errorMessage && (
-        <Dialog title="Editor Error" onClose={() => setErrorMessage(null)} className="max-w-md">
-          <div className="space-y-4">
-            <p className="text-sm text-base-content/70">{errorMessage}</p>
-            <div className="modal-action mt-0">
-              <button className="btn btn-primary" onClick={() => setErrorMessage(null)}>
-                Close
-              </button>
-            </div>
-          </div>
-        </Dialog>
-      )}
+      <ImagePreviewDialog />
+      <EditorErrorDialog />
     </div>
   )
 }

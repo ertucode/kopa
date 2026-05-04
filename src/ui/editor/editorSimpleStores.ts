@@ -1,5 +1,5 @@
 import { createSimpleStore } from '@/lib/stores/createSimpleStore'
-import { DEFAULT_EDITOR_SESSION } from './editorSession'
+import { DEFAULT_EDITOR_SESSION, ImagePreviewDialogState } from './editorSession'
 
 export const { ToolStore, updateToolStoreValue, useToolStore, useToolStoreValue, getToolStoreValue } =
   createSimpleStore(DEFAULT_EDITOR_SESSION.tool, 'Tool')
@@ -62,3 +62,11 @@ export const {
   useShapeSettingsStoreValue,
   getShapeSettingsStoreValue,
 } = createSimpleStore(DEFAULT_EDITOR_SESSION.shapeSettings, 'ShapeSettings')
+
+export const {
+  ImagePreviewDialogStore,
+  updateImagePreviewDialogStoreValue,
+  useImagePreviewDialogStore,
+  useImagePreviewDialogStoreValue,
+  getImagePreviewDialogStoreValue,
+} = createSimpleStore<ImagePreviewDialogState | null, 'ImagePreviewDialog'>(null, 'ImagePreviewDialog')

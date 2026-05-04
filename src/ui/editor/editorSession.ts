@@ -31,6 +31,14 @@ export type SelectionDraftState = {
   height: string
 }
 
+export type ImagePreviewDialogState = {
+  name: string
+  dataUrl: string
+  pixelWidth: number
+  pixelHeight: number
+  zoom: number
+}
+
 export type EditorSessionState = {
   tool: EditorTool
   canvasDraft: CanvasDraftState
