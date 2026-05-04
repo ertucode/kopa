@@ -2,7 +2,7 @@ import { createSimpleStore } from '@/lib/stores/createSimpleStore'
 
 export const {
   HasUnsavedChangesStore,
-  HasUnsavedChangesStoreActions,
+  updateHasUnsavedChangesStoreValue,
   useHasUnsavedChangesStore,
   useHasUnsavedChangesStoreValue,
 } = createSimpleStore(false, 'HasUnsavedChanges')

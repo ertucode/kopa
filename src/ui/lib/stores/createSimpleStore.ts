@@ -10,7 +10,7 @@ type StoreActions<T> = (value: SetStateAction<T>) => void
 type SimpleStoreResult<T, TName extends string, TStore> = Record<`${TName}Store`, TStore> &
   Record<`use${TName}Store`, () => readonly [T, StoreActions<T>]> &
   Record<`use${TName}StoreValue`, () => T> &
-  Record<`${TName}StoreActions`, StoreActions<T>>
+  Record<`update${TName}StoreValue`, StoreActions<T>>
 
 function isUpdater<T>(value: SetStateAction<T>): value is (context: T) => T {
   return typeof value === 'function'
@@ -50,6 +50,6 @@ export function createSimpleStore<T, const TName extends string>(initialValue: T
     [`${name}Store`]: store,
     [`use${name}Store`]: useStore,
     [`use${name}StoreValue`]: useStoreValue,
-    [`${name}StoreActions`]: storeActions,
+    [`update${name}StoreValue`]: storeActions,
   } as SimpleStoreResult<T, TName, typeof store>
 }

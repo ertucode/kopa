@@ -80,8 +80,8 @@ import {
   useMovementStepStore,
   useProjectNameDraftStore,
   ShapeSettingsStore,
-  ShapeSettingsStoreActions,
   useToolStore,
+  updateShapeSettingsStoreValue,
 } from './editorSimpleStores'
 import { Typescript } from '@common/Typescript'
 import { Accordion } from '@/lib/components/accordion'
@@ -91,8 +91,8 @@ import { Input } from '@/lib/components/input'
 import { Label } from '@/lib/components/label'
 import { LabeledInput } from '@/lib/components/labeled-input'
 import {
-  HasUnsavedChangesStoreActions,
   isHydratingProjectRef,
+  updateHasUnsavedChangesStoreValue,
   useHasUnsavedChangesStoreValue,
 } from './editorPersistenceState'
 import { ShapeToolSection } from './ShapeToolSection'
@@ -515,7 +515,7 @@ export function EditorApp() {
     setMovementStepDraft(args.nextMovementStepDraft)
     setCustomVariables(args.nextVariables)
     setHighlightSettings(args.nextHighlightSettings)
-    ShapeSettingsStoreActions(args.nextShapeSettings)
+    updateShapeSettingsStoreValue(args.nextShapeSettings)
     pendingDraftSyncRef.current = {
       layerPosition: args.nextLayerPositionDraft,
       layerSize: args.nextLayerSizeDraft,
@@ -529,7 +529,7 @@ export function EditorApp() {
     setLayerSizeDraft(args.nextLayerSizeDraft)
     setSelectionDraft(args.nextSelectionDraft)
     setPasteSizeDraft(args.nextPasteSizeDraft)
-    HasUnsavedChangesStoreActions(false)
+    updateHasUnsavedChangesStoreValue(false)
   }
 
   async function refreshRecentProjects() {
@@ -607,7 +607,7 @@ export function EditorApp() {
 
       setProjectPath(nextProjectPath)
       setProjectName(serializedProject.request.project.name)
-      HasUnsavedChangesStoreActions(false)
+      updateHasUnsavedChangesStoreValue(false)
       await refreshRecentProjects()
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to save editor project')
@@ -647,7 +647,7 @@ export function EditorApp() {
       if (!response.canceled && response.projectPath) {
         setProjectPath(response.projectPath)
         setProjectName(serializedProject.request.project.name)
-        HasUnsavedChangesStoreActions(false)
+        updateHasUnsavedChangesStoreValue(false)
         await refreshRecentProjects()
       }
     } catch (error) {
@@ -726,7 +726,7 @@ export function EditorApp() {
       nextHighlightSettings: DEFAULT_EDITOR_SESSION.highlightSettings,
       nextShapeSettings: DEFAULT_EDITOR_SESSION.shapeSettings,
     })
-    HasUnsavedChangesStoreActions(true)
+    updateHasUnsavedChangesStoreValue(true)
   }
 
   function applyProjectName() {
@@ -738,7 +738,7 @@ export function EditorApp() {
 
     if (nextProjectName === projectName) return
     setProjectName(nextProjectName)
-    HasUnsavedChangesStoreActions(true)
+    updateHasUnsavedChangesStoreValue(true)
   }
 
   function applyMovementStep() {

@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent } from 'react'
 import { LayerPositionDraftState, LayerSizeDraftState, PasteSizeDraftState, SelectionDraftState } from './editorSession'
-import { HasUnsavedChangesStoreActions, autosaveTimeoutRef, isHydratingProjectRef } from './editorPersistenceState'
+import { autosaveTimeoutRef, isHydratingProjectRef, updateHasUnsavedChangesStoreValue } from './editorPersistenceState'
 import {
   useCanvasDraftStoreValue,
   useCustomVariablesStoreValue,
@@ -52,7 +52,7 @@ export function EditorAutoSaveEffect({
       return
     }
 
-    HasUnsavedChangesStoreActions(true)
+    updateHasUnsavedChangesStoreValue(true)
 
     if (interactionActive || !projectPath) return
 
