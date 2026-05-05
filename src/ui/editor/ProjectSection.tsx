@@ -1,7 +1,6 @@
 import { Accordion } from '@/lib/components/accordion'
 import { Button } from '@/lib/components/button'
 import { Input } from '@/lib/components/input'
-import { Label } from '@/lib/components/label'
 import { cn } from '@/lib/functions/clsx'
 import {
   useIsProjectSavingStore,

@@ -3,34 +3,40 @@ import useMeasure from 'react-use-measure'
 import { ContextMenu, ContextMenuList, useContextMenu } from '@/lib/components/context-menu'
 import { useShortcuts } from '@/lib/hooks/useShortcuts'
 import { getWindowElectron, windowArgs } from '@/getWindowElectron'
-import { clamp, normalizeRect, Point, pointInRect, Rect, snapToStep } from '@common/TransformUtils'
-import { createLayerFromFile, cutSelectionFromDocument, loadImageElement } from './raster'
+import { Point, pointInRect, Rect, snapToStep } from '@common/TransformUtils'
+import { createLayerFromFile, loadImageElement } from './raster'
 import { deserializeProject, serializeProject } from './projectPersistence'
-import {
-  EditorDocument,
-  EditorLayer,
-  EditorTool,
-  HighlightLayer,
-  ImageLayer,
-  PixelSelection,
-  ResizeHandle,
-  ShapeLayer,
-} from './types'
-import {
-  createShapeLayer,
-  getShapeRectFromDrag,
-  updateShapeLayerRect,
-  drawShapeLayer,
-  ShapeSettingsState,
-} from './shapeUtils'
-import {
-  createHighlightLayer,
-  getHighlightAbsolutePoints,
-  updateHighlightLayerPoints,
-  drawHighlightLayer,
-  HighlightSettingsState,
-} from './highlightUtils'
+import { EditorDocument, EditorTool, ImageLayer, ResizeHandle } from './types'
+import { drawShapeLayer, ShapeSettingsState } from './shapeUtils'
+import { drawHighlightLayer, HighlightSettingsState } from './highlightUtils'
 import { CustomVariableDraft, parseRoundedMathExpression, resolveCustomVariables } from '../utils/customVariableUtils'
+import {
+  clampSelectionToDocument,
+  cloneDocument,
+  createDocument,
+  getLayerRect,
+  hitLayer,
+  isHighlightLayer,
+  isImageLayer,
+  isShapeLayer,
+} from '../utils/documentUtils'
+import {
+  beginHighlightCreation,
+  beginLayerMove,
+  beginResize,
+  beginSelectionCreation,
+  beginShapeCreation,
+  cancelInteraction,
+  finalizeInteraction,
+  finishSelectionMove,
+  startSelectionMove,
+  updateHighlightCreation,
+  updateLayerMove,
+  updateLayerResize,
+  updateSelectionCreation,
+  updateSelectionMove,
+  updateShapeCreation,
+} from './interactionUtils'
 import {
   CanvasDraftState,
   DEFAULT_EDITOR_SESSION,
@@ -40,36 +46,63 @@ import {
   SelectionDraftState,
 } from './editorSession'
 import {
-  useCanvasDraftStore,
-  useCustomVariablesStore,
   useLayerPositionDraftStore,
   useLayerSizeDraftStore,
   usePasteSizeDraftStore,
   useSelectionDraftStore,
   updateImagePreviewDialogStoreValue,
-  useMovementStepDraftStore,
   useMovementStepStore,
-  useProjectNameDraftStore,
-  useToolStore,
   updateShapeSettingsStoreValue,
   updateHighlightSettingsStoreValue,
   getShapeSettingsStoreValue,
   getHighlightSettingsStoreValue,
   updateErrorMessageStoreValue,
-  useInteractionStore,
-  useSelectionPreviewStore,
-  useIsSavingStore,
-  useIsProjectSavingStore,
+  updateInteractionStoreValue,
+  updateSelectionPreviewStoreValue,
+  useInteractionStoreValue,
   useProjectPathStore,
   useProjectNameStore,
-  useRecentProjectsStore,
+  useSelectionPreviewStoreValue,
   useImageRevisionStore,
+  updateProjectPathStoreValue,
+  updateProjectNameStoreValue,
+  updateCanvasDraftStoreValue,
+  updateCustomVariablesStoreValue,
+  updateMovementStepDraftStoreValue,
+  updateMovementStepStoreValue,
+  updateProjectNameDraftStoreValue,
+  updateToolStoreValue,
+  updateLayerPositionDraftStoreValue,
+  updateLayerSizeDraftStoreValue,
+  updatePasteSizeDraftStoreValue,
+  updateSelectionDraftStoreValue,
+  getToolStoreValue,
+  useToolStoreValue,
+  useCanvasDraftStoreValue,
+  useCustomVariablesStoreValue,
+  getProjectNameStoreValue,
+  getMovementStepDraftStoreValue,
+  getIsSavingStoreValue,
+  updateIsSavingStoreValue,
+  updateRecentProjectsStoreValue,
+  updateImageRevisionStoreValue,
+  updateIsProjectSavingStoreValue,
+  getCanvasDraftStoreValue,
+  getMovementStepStoreValue,
+  getPasteSizeDraftStoreValue,
+  getLayerPositionDraftStoreValue,
+  getLayerSizeDraftStoreValue,
+  getSelectionDraftStoreValue,
+  getCustomVariablesStoreValue,
+  getInteractionStoreValue,
 } from './editorSimpleStores'
 import {
   EditorHistoryState,
   getDocumentStateStoreValue,
+  getHistoryStoreValue,
+  updateDocumentStateStoreValue,
+  updateHistoryStoreValue,
   useDocumentStateStore,
-  useHistoryStore,
 } from './editorCoreStores'
 import {
   useActiveLayerValue,
@@ -81,9 +114,9 @@ import {
 } from './editorDerivedValues'
 import { pendingDraftSyncRef } from './editorDraftSyncState'
 import {
+  getHasUnsavedChangesStoreValue,
   isHydratingProjectRef,
   updateHasUnsavedChangesStoreValue,
-  useHasUnsavedChangesStoreValue,
 } from './editorPersistenceState'
 import { ShapeToolSection } from './ShapeToolSection'
 import { EditorAutoSaveEffect } from './EditorAutoSaveEffect'
@@ -111,56 +144,6 @@ type CanvasContextMenuItem =
       layerId: string | null
     }
 
-function cloneLayer<T extends EditorLayer>(layer: T): T {
-  if (layer.type === 'highlight') {
-    return {
-      ...layer,
-      points: layer.points.map(point => ({ ...point })),
-    }
-  }
-
-  return { ...layer }
-}
-
-function cloneDocument(documentState: EditorDocument): EditorDocument {
-  return {
-    ...documentState,
-    layers: documentState.layers.map(layer => cloneLayer(layer)),
-    selection: documentState.selection ? { ...documentState.selection } : null,
-  }
-}
-
-function documentsEqual(left: EditorDocument, right: EditorDocument): boolean {
-  return JSON.stringify(left) === JSON.stringify(right)
-}
-
-function createDocument(width: number, height: number): EditorDocument {
-  return {
-    width,
-    height,
-    pasteWidth: null,
-    pasteHeight: null,
-    layers: [],
-    activeLayerId: null,
-    selection: null,
-  }
-}
-
-function updateLayer(
-  documentState: EditorDocument,
-  layerId: string,
-  updater: (layer: EditorLayer) => EditorLayer
-): EditorDocument {
-  return {
-    ...documentState,
-    layers: documentState.layers.map(layer => (layer.id === layerId ? updater(layer) : layer)),
-  }
-}
-
-function getLayerRect(layer: EditorLayer): Rect {
-  return { x: layer.x, y: layer.y, width: layer.width, height: layer.height }
-}
-
 function getHandles(layer: ImageLayer): Array<{ handle: ResizeHandle; rect: Rect }> {
   const size = 12
   const half = size / 2
@@ -181,29 +164,6 @@ function getHandles(layer: ImageLayer): Array<{ handle: ResizeHandle; rect: Rect
   }))
 }
 
-function hitLayer(layers: EditorLayer[], point: Point): EditorLayer | null {
-  for (let index = layers.length - 1; index >= 0; index -= 1) {
-    const layer = layers[index]
-    if (!layer.visible) continue
-    if (pointInRect(point, getLayerRect(layer))) {
-      return layer
-    }
-  }
-  return null
-}
-
-function isImageLayer(layer: EditorLayer): layer is ImageLayer {
-  return layer.type === 'image'
-}
-
-function isHighlightLayer(layer: EditorLayer): layer is HighlightLayer {
-  return layer.type === 'highlight'
-}
-
-function isShapeLayer(layer: EditorLayer): layer is ShapeLayer {
-  return layer.type === 'shape'
-}
-
 function getPointerOnCanvas(event: React.PointerEvent<HTMLCanvasElement>, canvas: HTMLCanvasElement): Point {
   const rect = canvas.getBoundingClientRect()
   const scaleX = canvas.width / rect.width
@@ -214,208 +174,167 @@ function getPointerOnCanvas(event: React.PointerEvent<HTMLCanvasElement>, canvas
   }
 }
 
-function clampSelectionToDocument(selection: PixelSelection, documentState: EditorDocument): PixelSelection {
-  const x = clamp(Math.round(selection.x), 0, documentState.width - 1)
-  const y = clamp(Math.round(selection.y), 0, documentState.height - 1)
-  const width = clamp(Math.round(selection.width), 1, documentState.width - x)
-  const height = clamp(Math.round(selection.height), 1, documentState.height - y)
-  return {
-    x,
-    y,
-    width,
-    height,
+function applyProjectState(args: {
+  nextProjectPath: string | null
+  nextProjectName: string
+  nextDocumentState: EditorDocument | null
+  nextHistory: EditorHistoryState
+  nextTool: EditorTool
+  nextCanvasDraft: CanvasDraftState
+  nextMovementStep: string
+  nextMovementStepDraft: string
+  nextPasteSizeDraft: PasteSizeDraftState
+  nextLayerPositionDraft: LayerPositionDraftState | null
+  nextLayerSizeDraft: LayerSizeDraftState | null
+  nextSelectionDraft: SelectionDraftState | null
+  nextVariables: CustomVariableDraft[]
+  nextHighlightSettings: HighlightSettingsState
+  nextShapeSettings: ShapeSettingsState
+}) {
+  isHydratingProjectRef.current = true
+  updateProjectPathStoreValue(args.nextProjectPath)
+  updateProjectNameStoreValue(args.nextProjectName)
+  updateProjectNameDraftStoreValue({ value: args.nextProjectName })
+  updateDocumentStateStoreValue(args.nextDocumentState)
+  updateHistoryStoreValue(args.nextHistory)
+  updateToolStoreValue(args.nextTool)
+  updateCanvasDraftStoreValue(args.nextCanvasDraft)
+  updateMovementStepStoreValue(args.nextMovementStep)
+  updateMovementStepDraftStoreValue(args.nextMovementStepDraft)
+  updateCustomVariablesStoreValue(args.nextVariables)
+  updateHighlightSettingsStoreValue(args.nextHighlightSettings)
+  updateShapeSettingsStoreValue(args.nextShapeSettings)
+  pendingDraftSyncRef.current = {
+    layerPosition: args.nextLayerPositionDraft,
+    layerSize: args.nextLayerSizeDraft,
+    selection: args.nextSelectionDraft,
+    pasteSize: args.nextPasteSizeDraft,
+  }
+  updateInteractionStoreValue(null)
+  updateSelectionPreviewStoreValue(null)
+  updateImagePreviewDialogStoreValue(null)
+  updateLayerPositionDraftStoreValue(args.nextLayerPositionDraft)
+  updateLayerSizeDraftStoreValue(args.nextLayerSizeDraft)
+  updateSelectionDraftStoreValue(args.nextSelectionDraft)
+  updatePasteSizeDraftStoreValue(args.nextPasteSizeDraft)
+  updateHasUnsavedChangesStoreValue(false)
+}
+
+async function refreshRecentProjects() {
+  try {
+    updateRecentProjectsStoreValue(await getWindowElectron().getRecentEditorProjects())
+  } catch (error) {
+    updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to load recent projects')
+  }
+}
+function confirmDiscardUnsavedChanges() {
+  if (!getHasUnsavedChangesStoreValue()) return true
+  return window.confirm('You have unsaved editor changes. Continue and discard them?')
+}
+async function openProjectFromPath(nextProjectPath: string, providedName?: string) {
+  try {
+    const response = await getWindowElectron().loadEditorProject({ projectPath: nextProjectPath })
+    const loadedProject = await deserializeProject(response.project, assetId =>
+      getWindowElectron().loadEditorProjectAsset({ projectPath: response.projectPath, assetId })
+    )
+
+    imageCache.clear()
+    updateImageRevisionStoreValue(revision => revision + 1)
+    applyProjectState({
+      nextProjectPath: response.projectPath,
+      nextProjectName: providedName ?? response.project.name,
+      nextDocumentState: loadedProject.documentState,
+      nextHistory: loadedProject.history,
+      nextTool: loadedProject.ui.tool,
+      nextCanvasDraft: loadedProject.ui.canvasDraft,
+      nextMovementStep: loadedProject.ui.movementStep,
+      nextMovementStepDraft: loadedProject.ui.movementStepDraft,
+      nextPasteSizeDraft: loadedProject.ui.pasteSizeDraft,
+      nextLayerPositionDraft: loadedProject.ui.layerPositionDraft,
+      nextLayerSizeDraft: loadedProject.ui.layerSizeDraft,
+      nextSelectionDraft: loadedProject.ui.selectionDraft,
+      nextVariables: loadedProject.ui.variables,
+      nextHighlightSettings: loadedProject.ui.highlightSettings,
+      nextShapeSettings: loadedProject.ui.shapeSettings,
+    })
+    await refreshRecentProjects()
+  } catch (error) {
+    updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to open editor project')
+  }
+}
+const imageCache = new Map<string, HTMLImageElement>()
+
+async function saveProjectToPath(nextProjectPath: string) {
+  updateIsProjectSavingStoreValue(true)
+
+  try {
+    const serializedProject = await serializeProject(getProjectToSerialize())
+
+    await getWindowElectron().saveEditorProject({
+      projectPath: nextProjectPath,
+      request: serializedProject.request,
+    })
+
+    updateProjectPathStoreValue(nextProjectPath)
+    updateProjectNameStoreValue(serializedProject.request.project.name)
+    updateHasUnsavedChangesStoreValue(false)
+    await refreshRecentProjects()
+  } catch (error) {
+    updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to save editor project')
+  } finally {
+    updateIsProjectSavingStoreValue(false)
   }
 }
 
-function selectionFromDrag(documentState: EditorDocument, start: Point, current: Point): PixelSelection {
-  const normalized = normalizeRect(start, current)
-  return clampSelectionToDocument(normalized, documentState)
+function getProjectToSerialize(): Parameters<typeof serializeProject>[0] {
+  return {
+    name: getProjectNameStoreValue(),
+    documentState: getDocumentStateStoreValue(),
+    history: getHistoryStoreValue(),
+    ui: {
+      tool: getToolStoreValue(),
+      canvasDraft: getCanvasDraftStoreValue(),
+      movementStep: getMovementStepStoreValue(),
+      movementStepDraft: getMovementStepDraftStoreValue(),
+      pasteSizeDraft: getPasteSizeDraftStoreValue(),
+      layerPositionDraft: getLayerPositionDraftStoreValue(),
+      layerSizeDraft: getLayerSizeDraftStoreValue(),
+      selectionDraft: getSelectionDraftStoreValue(),
+      variables: getCustomVariablesStoreValue(),
+      highlightSettings: getHighlightSettingsStoreValue(),
+      shapeSettings: getShapeSettingsStoreValue(),
+    },
+  }
 }
 
 export function EditorApp() {
   const [documentState, setDocumentState] = useDocumentStateStore()
-  const [history, setHistory] = useHistoryStore()
-  const [tool, setTool] = useToolStore()
-  const [interaction, setInteraction] = useInteractionStore()
-  const [selectionPreview, setSelectionPreview] = useSelectionPreviewStore()
-  const [canvasDraft, setCanvasDraft] = useCanvasDraftStore()
+  const tool = useToolStoreValue()
+  const selectionPreview = useSelectionPreviewStoreValue()
+  const canvasDraft = useCanvasDraftStoreValue()
   const [pasteSizeDraft, setPasteSizeDraft] = usePasteSizeDraftStore()
   const [movementStep, setMovementStep] = useMovementStepStore()
-  const [movementStepDraft, setMovementStepDraft] = useMovementStepDraftStore()
-  const [customVariables, setCustomVariables] = useCustomVariablesStore()
+  const customVariables = useCustomVariablesStoreValue()
   const [layerPositionDraft, setLayerPositionDraft] = useLayerPositionDraftStore()
   const [layerSizeDraft, setLayerSizeDraft] = useLayerSizeDraftStore()
   const [selectionDraft, setSelectionDraft] = useSelectionDraftStore()
-  const [projectNameDraft, setProjectNameDraft] = useProjectNameDraftStore()
-  const [isSaving, setIsSaving] = useIsSavingStore()
-  const [, setIsProjectSaving] = useIsProjectSavingStore()
   const [projectPath, setProjectPath] = useProjectPathStore()
   const [projectName, setProjectName] = useProjectNameStore()
-  const [, setRecentProjects] = useRecentProjectsStore()
-  const hasUnsavedChanges = useHasUnsavedChangesStoreValue()
   const [viewportRef, viewportBounds] = useMeasure()
   const mainCanvasRef = useRef<HTMLCanvasElement>(null)
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null)
-  const imageCacheRef = useRef(new Map<string, HTMLImageElement>())
-  const [imageRevision, setImageRevision] = useImageRevisionStore()
+  const [imageRevision, _] = useImageRevisionStore()
 
   const activeLayer = useActiveLayerValue()
   const resolvedCustomVariables = useResolvedCustomVariablesValue()
   const resolvedExpressionVariables = useResolvedExpressionVariablesValue()
   const selectionExpressionVariables = useSelectionExpressionVariablesValue()
 
-  function applyProjectState(args: {
-    nextProjectPath: string | null
-    nextProjectName: string
-    nextDocumentState: EditorDocument | null
-    nextHistory: EditorHistoryState
-    nextTool: EditorTool
-    nextCanvasDraft: CanvasDraftState
-    nextMovementStep: string
-    nextMovementStepDraft: string
-    nextPasteSizeDraft: PasteSizeDraftState
-    nextLayerPositionDraft: LayerPositionDraftState | null
-    nextLayerSizeDraft: LayerSizeDraftState | null
-    nextSelectionDraft: SelectionDraftState | null
-    nextVariables: CustomVariableDraft[]
-    nextHighlightSettings: HighlightSettingsState
-    nextShapeSettings: ShapeSettingsState
-  }) {
-    isHydratingProjectRef.current = true
-    setProjectPath(args.nextProjectPath)
-    setProjectName(args.nextProjectName)
-    setProjectNameDraft({ value: args.nextProjectName })
-    setDocumentState(args.nextDocumentState)
-    setHistory(args.nextHistory)
-    setTool(args.nextTool)
-    setCanvasDraft(args.nextCanvasDraft)
-    setMovementStep(args.nextMovementStep)
-    setMovementStepDraft(args.nextMovementStepDraft)
-    setCustomVariables(args.nextVariables)
-    updateHighlightSettingsStoreValue(args.nextHighlightSettings)
-    updateShapeSettingsStoreValue(args.nextShapeSettings)
-    pendingDraftSyncRef.current = {
-      layerPosition: args.nextLayerPositionDraft,
-      layerSize: args.nextLayerSizeDraft,
-      selection: args.nextSelectionDraft,
-      pasteSize: args.nextPasteSizeDraft,
-    }
-    setInteraction(null)
-    setSelectionPreview(null)
-    updateImagePreviewDialogStoreValue(null)
-    setLayerPositionDraft(args.nextLayerPositionDraft)
-    setLayerSizeDraft(args.nextLayerSizeDraft)
-    setSelectionDraft(args.nextSelectionDraft)
-    setPasteSizeDraft(args.nextPasteSizeDraft)
-    updateHasUnsavedChangesStoreValue(false)
-  }
-
-  async function refreshRecentProjects() {
-    try {
-      setRecentProjects(await getWindowElectron().getRecentEditorProjects())
-    } catch (error) {
-      updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to load recent projects')
-    }
-  }
-
-  function confirmDiscardUnsavedChanges() {
-    if (!hasUnsavedChanges) return true
-    return window.confirm('You have unsaved editor changes. Continue and discard them?')
-  }
-
-  async function openProjectFromPath(nextProjectPath: string, providedName?: string) {
-    try {
-      const response = await getWindowElectron().loadEditorProject({ projectPath: nextProjectPath })
-      const loadedProject = await deserializeProject(response.project, assetId =>
-        getWindowElectron().loadEditorProjectAsset({ projectPath: response.projectPath, assetId })
-      )
-
-      imageCacheRef.current.clear()
-      setImageRevision(revision => revision + 1)
-      applyProjectState({
-        nextProjectPath: response.projectPath,
-        nextProjectName: providedName ?? response.project.name,
-        nextDocumentState: loadedProject.documentState,
-        nextHistory: loadedProject.history,
-        nextTool: loadedProject.ui.tool,
-        nextCanvasDraft: loadedProject.ui.canvasDraft,
-        nextMovementStep: loadedProject.ui.movementStep,
-        nextMovementStepDraft: loadedProject.ui.movementStepDraft,
-        nextPasteSizeDraft: loadedProject.ui.pasteSizeDraft,
-        nextLayerPositionDraft: loadedProject.ui.layerPositionDraft,
-        nextLayerSizeDraft: loadedProject.ui.layerSizeDraft,
-        nextSelectionDraft: loadedProject.ui.selectionDraft,
-        nextVariables: loadedProject.ui.variables,
-        nextHighlightSettings: loadedProject.ui.highlightSettings,
-        nextShapeSettings: loadedProject.ui.shapeSettings,
-      })
-      await refreshRecentProjects()
-    } catch (error) {
-      updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to open editor project')
-    }
-  }
-
-  async function saveProjectToPath(nextProjectPath: string) {
-    setIsProjectSaving(true)
-
-    try {
-      const serializedProject = await serializeProject({
-        name: projectName,
-        documentState,
-        history,
-        ui: {
-          tool,
-          canvasDraft,
-          movementStep,
-          movementStepDraft,
-          pasteSizeDraft,
-          layerPositionDraft,
-          layerSizeDraft,
-          selectionDraft,
-          variables: customVariables,
-          highlightSettings: getHighlightSettingsStoreValue(),
-          shapeSettings: getShapeSettingsStoreValue(),
-        },
-      })
-
-      await getWindowElectron().saveEditorProject({
-        projectPath: nextProjectPath,
-        request: serializedProject.request,
-      })
-
-      setProjectPath(nextProjectPath)
-      setProjectName(serializedProject.request.project.name)
-      updateHasUnsavedChangesStoreValue(false)
-      await refreshRecentProjects()
-    } catch (error) {
-      updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to save editor project')
-    } finally {
-      setIsProjectSaving(false)
-    }
-  }
-
   async function handleSaveProjectAs() {
-    setIsProjectSaving(true)
+    updateIsProjectSavingStoreValue(true)
 
     try {
-      const serializedProject = await serializeProject({
-        name: projectName,
-        documentState,
-        history,
-        ui: {
-          tool,
-          canvasDraft,
-          movementStep,
-          movementStepDraft,
-          pasteSizeDraft,
-          layerPositionDraft,
-          layerSizeDraft,
-          selectionDraft,
-          variables: customVariables,
-          highlightSettings: getHighlightSettingsStoreValue(),
-          shapeSettings: getShapeSettingsStoreValue(),
-        },
-      })
+      const serializedProject = await serializeProject(getProjectToSerialize())
 
       const response = await getWindowElectron().saveEditorProjectAs({
         request: serializedProject.request,
@@ -431,7 +350,7 @@ export function EditorApp() {
     } catch (error) {
       updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to save editor project')
     } finally {
-      setIsProjectSaving(false)
+      updateIsProjectSavingStoreValue(false)
     }
   }
 
@@ -455,8 +374,8 @@ export function EditorApp() {
         getWindowElectron().loadEditorProjectAsset({ projectPath: nextProjectPath, assetId })
       )
 
-      imageCacheRef.current.clear()
-      setImageRevision(revision => revision + 1)
+      imageCache.clear()
+      updateImageRevisionStoreValue(revision => revision + 1)
       applyProjectState({
         nextProjectPath,
         nextProjectName: response.project.name,
@@ -508,7 +427,7 @@ export function EditorApp() {
   }
 
   function applyProjectName() {
-    const nextProjectName = projectNameDraft.value.trim()
+    const nextProjectName = getProjectNameStoreValue().trim()
     if (!nextProjectName) {
       updateErrorMessageStoreValue('Project name cannot be empty')
       return
@@ -526,6 +445,7 @@ export function EditorApp() {
           canvasHeight: documentState.height,
         }).variables
       : resolvedExpressionVariables
+    const movementStepDraft = getMovementStepDraftStoreValue()
     const parsedMovementStep = parseRoundedMathExpression(movementStepDraft, movementStepVariables)
     const nextMovementStep = Math.max(1, parsedMovementStep ?? Number.NaN)
     if (!Number.isFinite(nextMovementStep)) {
@@ -533,20 +453,6 @@ export function EditorApp() {
       return
     }
     setMovementStep(String(nextMovementStep))
-  }
-
-  function addCustomVariable() {
-    setCustomVariables(current => [...current, { id: crypto.randomUUID(), name: '', expression: '' }])
-  }
-
-  function updateCustomVariable(variableId: string, changes: Partial<CustomVariableDraft>) {
-    setCustomVariables(current =>
-      current.map(variable => (variable.id === variableId ? { ...variable, ...changes } : variable))
-    )
-  }
-
-  function removeCustomVariable(variableId: string) {
-    setCustomVariables(current => current.filter(variable => variable.id !== variableId))
   }
 
   function applyCustomVariables() {
@@ -687,6 +593,7 @@ export function EditorApp() {
       }
     }
 
+    const movementStepDraft = getMovementStepDraftStoreValue()
     const parsedMovementStep = parseRoundedMathExpression(movementStepDraft, resolvedExpressionVariables)
     const nextMovementStep = parsedMovementStep === null ? null : Math.max(1, parsedMovementStep)
     const didMovementStepChange = nextMovementStep !== null && String(nextMovementStep) !== movementStep
@@ -850,16 +757,16 @@ export function EditorApp() {
       }
 
       const loads = Array.from(urls).map(async url => {
-        if (imageCacheRef.current.has(url)) return
+        if (imageCache.has(url)) return
         const image = await loadImageElement(url)
         if (!cancelled) {
-          imageCacheRef.current.set(url, image)
+          imageCache.set(url, image)
         }
       })
 
       await Promise.all(loads)
       if (!cancelled) {
-        setImageRevision(revision => revision + 1)
+        updateImageRevisionStoreValue(revision => revision + 1)
       }
     }
 
@@ -897,7 +804,7 @@ export function EditorApp() {
         drawShapeLayer(mainContext, layer)
         continue
       }
-      const image = imageCacheRef.current.get(layer.dataUrl)
+      const image = imageCache.get(layer.dataUrl)
       if (!image) continue
       mainContext.save()
       mainContext.globalAlpha = layer.opacity
@@ -907,7 +814,7 @@ export function EditorApp() {
     }
 
     if (selectionPreview) {
-      const floatingImage = imageCacheRef.current.get(selectionPreview.floatingDataUrl)
+      const floatingImage = imageCache.get(selectionPreview.floatingDataUrl)
       if (floatingImage) {
         const rect = selectionPreview.selection
         mainContext.drawImage(floatingImage, rect.x, rect.y, rect.width, rect.height)
@@ -951,7 +858,7 @@ export function EditorApp() {
 
   function pushHistory(label: string, previousDocument: EditorDocument, nextDocument: EditorDocument) {
     setDocumentState(nextDocument)
-    setHistory(current => ({
+    updateHistoryStoreValue(current => ({
       past: [...current.past, { label, document: cloneDocument(previousDocument) }],
       future: [],
     }))
@@ -960,10 +867,10 @@ export function EditorApp() {
   function setCommittedDocument(documentValue: EditorDocument, label: string) {
     setDocumentState(current => {
       if (!current) {
-        setHistory({ past: [], future: [] })
+        updateHistoryStoreValue({ past: [], future: [] })
         return documentValue
       }
-      setHistory(historyState => ({
+      updateHistoryStoreValue(historyState => ({
         past: [...historyState.past, { label, document: cloneDocument(current) }],
         future: [],
       }))
@@ -1057,13 +964,13 @@ export function EditorApp() {
   }
 
   function handleUndo() {
-    setHistory(currentHistory => {
+    updateHistoryStoreValue(currentHistory => {
       const currentDocumentState = getDocumentStateStoreValue()
       const previousEntry = currentHistory.past[currentHistory.past.length - 1]
       if (!previousEntry || !currentDocumentState) return currentHistory
       setDocumentState(previousEntry.document)
-      setInteraction(null)
-      setSelectionPreview(null)
+      updateInteractionStoreValue(null)
+      updateSelectionPreviewStoreValue(null)
       return {
         past: currentHistory.past.slice(0, -1),
         future: [
@@ -1075,13 +982,13 @@ export function EditorApp() {
   }
 
   function handleRedo() {
-    setHistory(currentHistory => {
+    updateHistoryStoreValue(currentHistory => {
       const currentDocumentState = getDocumentStateStoreValue()
       const [nextEntry, ...remainingFuture] = currentHistory.future
       if (!nextEntry || !currentDocumentState) return currentHistory
       setDocumentState(nextEntry.document)
-      setInteraction(null)
-      setSelectionPreview(null)
+      updateInteractionStoreValue(null)
+      updateSelectionPreviewStoreValue(null)
       return {
         past: [...currentHistory.past, { label: nextEntry.label, document: cloneDocument(currentDocumentState) }],
         future: remainingFuture,
@@ -1138,297 +1045,6 @@ export function EditorApp() {
     },
   ])
 
-  function finalizeInteraction(label: string) {
-    if (!interaction || !documentState) return
-    if (documentsEqual(interaction.initialDocument, documentState)) {
-      setInteraction(null)
-      return
-    }
-    setHistory(current => ({
-      past: [...current.past, { label, document: cloneDocument(interaction.initialDocument) }],
-      future: [],
-    }))
-    setInteraction(null)
-  }
-
-  function cancelInteraction() {
-    if (!interaction) return
-    setDocumentState(cloneDocument(interaction.initialDocument))
-    setInteraction(null)
-    setSelectionPreview(null)
-  }
-
-  async function startSelectionMove(selection: PixelSelection, pointer: Point) {
-    if (!documentState) return
-    const currentDocument = cloneDocument(documentState)
-    const draft = await cutSelectionFromDocument(currentDocument, selection)
-    setDocumentState({
-      ...currentDocument,
-      layers: draft.layers,
-      selection,
-    })
-    setSelectionPreview({
-      floatingDataUrl: draft.floatingDataUrl,
-      selection,
-    })
-    setInteraction({
-      type: 'moving-selection',
-      initialDocument: cloneDocument(documentState),
-      selectionStart: selection,
-      pointerStart: pointer,
-      floatingDataUrl: draft.floatingDataUrl,
-    })
-  }
-
-  function beginLayerMove(layer: EditorLayer, pointer: Point) {
-    if (!documentState) return
-    setDocumentState({ ...documentState, activeLayerId: layer.id, selection: null })
-    setInteraction({
-      type: 'moving-layer',
-      initialDocument: cloneDocument(documentState),
-      layerId: layer.id,
-      pointerStart: pointer,
-      layerStart: getLayerRect(layer),
-    })
-  }
-
-  function beginResize(layer: ImageLayer, pointer: Point, handle: ResizeHandle) {
-    if (!documentState) return
-    setDocumentState({ ...documentState, activeLayerId: layer.id, selection: null })
-    setInteraction({
-      type: 'resizing-layer',
-      initialDocument: cloneDocument(documentState),
-      layerId: layer.id,
-      handle,
-      pointerStart: pointer,
-      layerStart: getLayerRect(layer),
-      aspectRatio: layer.width / layer.height,
-    })
-  }
-
-  function beginHighlightCreation(pointer: Point) {
-    if (!documentState) return
-    const layer = createHighlightLayer([pointer], getHighlightSettingsStoreValue())
-    setDocumentState({
-      ...documentState,
-      layers: [...documentState.layers, layer],
-      activeLayerId: layer.id,
-      selection: null,
-    })
-    setInteraction({
-      type: 'creating-highlight',
-      initialDocument: cloneDocument(documentState),
-      layerId: layer.id,
-      start: pointer,
-      axisLock: null,
-    })
-  }
-
-  function beginShapeCreation(pointer: Point) {
-    if (!documentState) return
-    const layer = createShapeLayer({ x: pointer.x, y: pointer.y, width: 1, height: 1 }, getShapeSettingsStoreValue())
-    setDocumentState({
-      ...documentState,
-      layers: [...documentState.layers, layer],
-      activeLayerId: layer.id,
-      selection: null,
-    })
-    setInteraction({
-      type: 'creating-shape',
-      initialDocument: cloneDocument(documentState),
-      layerId: layer.id,
-      start: pointer,
-    })
-  }
-
-  function updateLayerMove(pointer: Point) {
-    if (!interaction || interaction.type !== 'moving-layer' || !documentState) return
-    const deltaX = Math.round(pointer.x - interaction.pointerStart.x)
-    const deltaY = Math.round(pointer.y - interaction.pointerStart.y)
-    setDocumentState(
-      updateLayer(documentState, interaction.layerId, layer => ({
-        ...layer,
-        x: snapToStep(interaction.layerStart.x + deltaX, normalizedMovementStep),
-        y: snapToStep(interaction.layerStart.y + deltaY, normalizedMovementStep),
-      }))
-    )
-  }
-
-  function updateLayerResize(pointer: Point, keepAspectRatio: boolean) {
-    if (!interaction || interaction.type !== 'resizing-layer' || !documentState) return
-    const deltaX = pointer.x - interaction.pointerStart.x
-    const deltaY = pointer.y - interaction.pointerStart.y
-    let nextRect = { ...interaction.layerStart }
-
-    if (interaction.handle.includes('e')) {
-      nextRect.width = Math.max(1, interaction.layerStart.width + deltaX)
-    }
-    if (interaction.handle.includes('s')) {
-      nextRect.height = Math.max(1, interaction.layerStart.height + deltaY)
-    }
-    if (interaction.handle.includes('w')) {
-      nextRect.x = interaction.layerStart.x + deltaX
-      nextRect.width = Math.max(1, interaction.layerStart.width - deltaX)
-    }
-    if (interaction.handle.includes('n')) {
-      nextRect.y = interaction.layerStart.y + deltaY
-      nextRect.height = Math.max(1, interaction.layerStart.height - deltaY)
-    }
-
-    if (keepAspectRatio) {
-      const ratio = interaction.aspectRatio
-      const basedOnWidth = Math.abs(deltaX) >= Math.abs(deltaY)
-      if (basedOnWidth) {
-        nextRect.height = Math.max(1, nextRect.width / ratio)
-        if (interaction.handle.includes('n')) {
-          nextRect.y = interaction.layerStart.y + interaction.layerStart.height - nextRect.height
-        }
-      } else {
-        nextRect.width = Math.max(1, nextRect.height * ratio)
-        if (interaction.handle.includes('w')) {
-          nextRect.x = interaction.layerStart.x + interaction.layerStart.width - nextRect.width
-        }
-      }
-    }
-
-    setDocumentState(
-      updateLayer(documentState, interaction.layerId, layer => ({
-        ...layer,
-        x: Math.round(nextRect.x),
-        y: Math.round(nextRect.y),
-        width: Math.max(1, Math.round(nextRect.width)),
-        height: Math.max(1, Math.round(nextRect.height)),
-      }))
-    )
-  }
-
-  function updateSelectionCreation(pointer: Point) {
-    if (!interaction || interaction.type !== 'creating-selection' || !documentState) return
-    const selection = selectionFromDrag(documentState, interaction.start, pointer)
-    setDocumentState({ ...documentState, selection })
-  }
-
-  function updateHighlightCreation(pointer: Point, constrainAxis: boolean) {
-    if (!interaction || interaction.type !== 'creating-highlight' || !documentState) return
-
-    const layer = documentState.layers.find(l => l.id === interaction.layerId)
-    if (!layer || !isHighlightLayer(layer)) return
-
-    const absolutePoints = getHighlightAbsolutePoints(layer)
-    const lastPoint = absolutePoints[absolutePoints.length - 1]
-
-    let constrainedPointer = pointer
-    let nextAxisLock = interaction.axisLock
-
-    if (!constrainAxis) {
-      nextAxisLock = null
-    } else if (lastPoint) {
-      if (interaction.axisLock === null) {
-        const deltaX = Math.abs(pointer.x - lastPoint.x)
-        const deltaY = Math.abs(pointer.y - lastPoint.y)
-        nextAxisLock = deltaX >= deltaY ? 'x' : 'y'
-      }
-      if (nextAxisLock === 'x') {
-        constrainedPointer = { x: pointer.x, y: lastPoint.y }
-      } else {
-        constrainedPointer = { x: lastPoint.x, y: pointer.y }
-      }
-    }
-
-    if (
-      lastPoint &&
-      Math.round(lastPoint.x) === Math.round(constrainedPointer.x) &&
-      Math.round(lastPoint.y) === Math.round(constrainedPointer.y)
-    ) {
-      return
-    }
-
-    setDocumentState(
-      updateLayer(documentState, interaction.layerId, layer => {
-        if (!isHighlightLayer(layer)) return layer
-        return updateHighlightLayerPoints(layer, [...getHighlightAbsolutePoints(layer), constrainedPointer])
-      })
-    )
-    if (interaction.axisLock !== nextAxisLock) {
-      setInteraction({ ...interaction, axisLock: nextAxisLock })
-    }
-  }
-
-  function updateShapeCreation(pointer: Point) {
-    if (!interaction || interaction.type !== 'creating-shape' || !documentState) return
-    const rect = getShapeRectFromDrag(getShapeSettingsStoreValue(), interaction.start, pointer)
-    setDocumentState(
-      updateLayer(documentState, interaction.layerId, layer => {
-        if (!isShapeLayer(layer)) return layer
-        return updateShapeLayerRect(layer, rect)
-      })
-    )
-  }
-
-  function updateSelectionMove(pointer: Point) {
-    if (!interaction || interaction.type !== 'moving-selection' || !documentState || !selectionPreview) return
-    const deltaDocumentX = Math.round(pointer.x - interaction.pointerStart.x)
-    const deltaDocumentY = Math.round(pointer.y - interaction.pointerStart.y)
-    const maxX = documentState.width - interaction.selectionStart.width
-    const maxY = documentState.height - interaction.selectionStart.height
-
-    const selection = {
-      ...interaction.selectionStart,
-      x: clamp(interaction.selectionStart.x + deltaDocumentX, 0, Math.max(0, maxX)),
-      y: clamp(interaction.selectionStart.y + deltaDocumentY, 0, Math.max(0, maxY)),
-    }
-
-    setDocumentState({ ...documentState, selection })
-    setSelectionPreview({
-      ...selectionPreview,
-      selection,
-    })
-  }
-
-  async function finishSelectionMove() {
-    if (!interaction || interaction.type !== 'moving-selection' || !documentState || !documentState.selection) return
-    if (
-      documentState.selection.x === interaction.selectionStart.x &&
-      documentState.selection.y === interaction.selectionStart.y &&
-      documentState.selection.width === interaction.selectionStart.width &&
-      documentState.selection.height === interaction.selectionStart.height
-    ) {
-      setDocumentState(cloneDocument(interaction.initialDocument))
-      setSelectionPreview(null)
-      setInteraction(null)
-      return
-    }
-    const nextLayer: ImageLayer = {
-      id: crypto.randomUUID(),
-      type: 'image',
-      name: 'Selection',
-      visible: true,
-      opacity: 1,
-      x: documentState.selection.x,
-      y: documentState.selection.y,
-      width: documentState.selection.width,
-      height: documentState.selection.height,
-      pixelWidth: interaction.selectionStart.width,
-      pixelHeight: interaction.selectionStart.height,
-      dataUrl: interaction.floatingDataUrl,
-    }
-
-    const nextDocument: EditorDocument = {
-      ...documentState,
-      layers: [...documentState.layers, nextLayer],
-      activeLayerId: nextLayer.id,
-      selection: documentState.selection,
-    }
-
-    setDocumentState(nextDocument)
-    setSelectionPreview(null)
-    setHistory(current => ({
-      past: [...current.past, { label: 'Move selection', document: cloneDocument(interaction.initialDocument) }],
-      future: [],
-    }))
-    setInteraction(null)
-  }
-
   function findHandle(layer: ImageLayer, point: Point): ResizeHandle | null {
     for (const item of getHandles(layer)) {
       if (pointInRect(point, item.rect)) {
@@ -1445,6 +1061,7 @@ export function EditorApp() {
     const pointer = getPointerOnCanvas(event, canvas)
     const layer = hitLayer(documentState.layers, pointer)
     canvas.setPointerCapture(event.pointerId)
+    const tool = getToolStoreValue()
 
     if (tool === 'select') {
       if (layer) {
@@ -1469,12 +1086,7 @@ export function EditorApp() {
         return
       }
 
-      setDocumentState({ ...documentState, activeLayerId: layer?.id ?? documentState.activeLayerId, selection: null })
-      setInteraction({
-        type: 'creating-selection',
-        initialDocument: cloneDocument(documentState),
-        start: pointer,
-      })
+      beginSelectionCreation(pointer, layer?.id ?? documentState.activeLayerId)
       return
     }
 
@@ -1489,6 +1101,7 @@ export function EditorApp() {
   }
 
   function handleCanvasPointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
+    const interaction = getInteractionStoreValue()
     if (!interaction) return
     const canvas = overlayCanvasRef.current
     if (!canvas) return
@@ -1520,6 +1133,7 @@ export function EditorApp() {
   }
 
   async function handleCanvasPointerUp() {
+    const interaction = getInteractionStoreValue()
     if (!interaction || !documentState) return
     if (interaction.type === 'moving-layer') {
       const layer = documentState.layers.find(item => item.id === interaction.layerId)
@@ -1545,7 +1159,7 @@ export function EditorApp() {
       return
     }
     if (interaction.type === 'moving-selection') {
-      await finishSelectionMove()
+      finishSelectionMove()
     }
   }
 
@@ -1664,10 +1278,10 @@ export function EditorApp() {
   }
 
   async function saveSelectionImage() {
-    if (!documentState?.selection || !mainCanvasRef.current || isSaving) return
+    if (!documentState?.selection || !mainCanvasRef.current || getIsSavingStoreValue()) return
 
     try {
-      setIsSaving(true)
+      updateIsSavingStoreValue(true)
       const selection = documentState.selection
       const exportCanvas = document.createElement('canvas')
       exportCanvas.width = selection.width
@@ -1695,22 +1309,22 @@ export function EditorApp() {
     } catch (error) {
       updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to save selection image')
     } finally {
-      setIsSaving(false)
+      updateIsSavingStoreValue(false)
     }
   }
 
   async function saveFinalImage() {
-    if (!documentState || !mainCanvasRef.current || isSaving) return
+    if (!documentState || !mainCanvasRef.current || getIsSavingStoreValue()) return
 
     try {
-      setIsSaving(true)
+      updateIsSavingStoreValue(true)
       const dataUrl = mainCanvasRef.current.toDataURL('image/png')
       const defaultFileName = `kopa-${documentState.width}x${documentState.height}.png`
       await getWindowElectron().saveFinalImage({ dataUrl, defaultFileName })
     } catch (error) {
       updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to save image')
     } finally {
-      setIsSaving(false)
+      updateIsSavingStoreValue(false)
     }
   }
 
@@ -1792,12 +1406,7 @@ export function EditorApp() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-base-100 text-base-content">
-      <EditorAutoSaveEffect
-        interactionActive={interaction !== null}
-        projectName={projectName}
-        projectPath={projectPath}
-        saveProjectToPath={saveProjectToPath}
-      />
+      <EditorAutoSaveEffect saveProjectToPath={saveProjectToPath} />
       <div className="flex min-h-0 flex-1">
         <aside className="flex w-80 flex-col border-r border-base-content/10">
           <EditorToolBarSection />
@@ -1813,7 +1422,6 @@ export function EditorApp() {
               onApplySize={applySelectionSize}
               onCopy={() => void copySelectionToClipboard()}
               onSavePng={() => void saveSelectionImage()}
-              isSaving={isSaving}
             />
           )}
         </aside>
@@ -1931,15 +1539,7 @@ export function EditorApp() {
 
               <ActiveLayerInspectorSection />
 
-              <VariablesSection
-                customVariables={customVariables}
-                resolvedCustomVariableErrors={resolvedCustomVariables.errors}
-                resolvedExpressionVariables={resolvedExpressionVariables}
-                onApplyCustomVariables={applyCustomVariables}
-                onAddCustomVariable={addCustomVariable}
-                onUpdateCustomVariable={updateCustomVariable}
-                onRemoveCustomVariable={removeCustomVariable}
-              />
+              <VariablesSection onApplyCustomVariables={applyCustomVariables} />
 
               <ObjectsListSection />
             </aside>

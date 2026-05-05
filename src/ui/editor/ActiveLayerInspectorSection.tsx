@@ -7,6 +7,14 @@ import { OneInputOneLine } from '@/lib/components/one-input-one-line'
 import { Select } from '@/lib/components/select'
 import { snapToStep } from '@common/TransformUtils'
 import { parseRoundedMathExpression } from '../utils/customVariableUtils'
+import {
+  cloneDocument,
+  documentsEqual,
+  isHighlightLayer,
+  isImageLayer,
+  isShapeLayer,
+  updateLayer,
+} from '../utils/documentUtils'
 import { useDocumentStateStore, useHistoryStore } from './editorCoreStores'
 import {
   useActiveHighlightValue,
@@ -18,62 +26,9 @@ import {
 import { pendingDraftSyncRef } from './editorDraftSyncState'
 import { useLayerPositionDraftStore, useLayerSizeDraftStore, updateErrorMessageStoreValue } from './editorSimpleStores'
 import { FormWithInlineApply } from './form/FormWithInlineApply'
-import {
-  clampHighlightBrushSize,
-  clampHighlightOpacity,
-  updateHighlightLayerStyle,
-} from './highlightUtils'
-import {
-  clampShapeOpacity,
-  updateShapeLayerStyle,
-} from './shapeUtils'
-import { EditorDocument, EditorLayer, HighlightBrushShape, HighlightLayer, ShapeLayer, ShapeType } from './types'
-
-function cloneLayer<T extends EditorLayer>(layer: T): T {
-  if (layer.type === 'highlight') {
-    return {
-      ...layer,
-      points: layer.points.map(point => ({ ...point })),
-    }
-  }
-
-  return { ...layer }
-}
-
-function cloneDocument(documentState: EditorDocument): EditorDocument {
-  return {
-    ...documentState,
-    layers: documentState.layers.map(layer => cloneLayer(layer)),
-    selection: documentState.selection ? { ...documentState.selection } : null,
-  }
-}
-
-function documentsEqual(left: EditorDocument, right: EditorDocument): boolean {
-  return JSON.stringify(left) === JSON.stringify(right)
-}
-
-function updateLayer(
-  documentState: EditorDocument,
-  layerId: string,
-  updater: (layer: EditorLayer) => EditorLayer
-): EditorDocument {
-  return {
-    ...documentState,
-    layers: documentState.layers.map(layer => (layer.id === layerId ? updater(layer) : layer)),
-  }
-}
-
-function isImageLayer(layer: EditorLayer): layer is Extract<EditorLayer, { type: 'image' }> {
-  return layer.type === 'image'
-}
-
-function isHighlightLayer(layer: EditorLayer): layer is HighlightLayer {
-  return layer.type === 'highlight'
-}
-
-function isShapeLayer(layer: EditorLayer): layer is ShapeLayer {
-  return layer.type === 'shape'
-}
+import { clampHighlightBrushSize, clampHighlightOpacity, updateHighlightLayerStyle } from './highlightUtils'
+import { clampShapeOpacity, updateShapeLayerStyle } from './shapeUtils'
+import { EditorDocument, HighlightBrushShape, HighlightLayer, ShapeLayer, ShapeType } from './types'
 
 function formatPixels(value: number): string {
   return `${Math.round(value)}`
@@ -149,7 +104,10 @@ export function ActiveLayerInspectorSection() {
     if (!layerSizeDraft || layerSizeDraft.layerId !== currentActiveLayer.id) return
     if (isHighlightLayer(currentActiveLayer)) return
 
-    let width = Math.max(1, parseRoundedMathExpression(layerSizeDraft.width, activeLayerExpressionVariables) ?? Number.NaN)
+    let width = Math.max(
+      1,
+      parseRoundedMathExpression(layerSizeDraft.width, activeLayerExpressionVariables) ?? Number.NaN
+    )
     let height = Math.max(
       1,
       parseRoundedMathExpression(layerSizeDraft.height, activeLayerExpressionVariables) ?? Number.NaN
@@ -211,11 +169,12 @@ export function ActiveLayerInspectorSection() {
   return (
     <section>
       <Accordion title={`Active - ${currentActiveLayer.name}`} defaultOpen>
-        <div className="space-y-3 bg-base-200/60 text-sm text-base-content/70">
+        <div className="bg-base-200/60 text-sm text-base-content/70">
           <div className="flex gap-2 text-xs">
             {isImageLayer(currentActiveLayer) && (
               <div>
-                Raster size: {formatPixels(currentActiveLayer.pixelWidth)}x{formatPixels(currentActiveLayer.pixelHeight)}
+                Raster size: {formatPixels(currentActiveLayer.pixelWidth)}x
+                {formatPixels(currentActiveLayer.pixelHeight)}
               </div>
             )}
           </div>
@@ -237,24 +196,29 @@ export function ActiveLayerInspectorSection() {
               />
             </FormWithInlineApply>
           )}
-          {!isHighlightLayer(currentActiveLayer) && layerSizeDraft && layerSizeDraft.layerId === currentActiveLayer.id && (
-            <FormWithInlineApply label="Exact Size" onSubmit={applyInspectorSize} disabled={isInspectorSizeUnchanged}>
-              <LabeledInput
-                label="W"
-                value={layerSizeDraft.width}
-                onChange={event => setLayerSizeDraft(current => (current ? { ...current, width: event } : current))}
-              />
-              <LabeledInput
-                label="H"
-                value={layerSizeDraft.height}
-                onChange={event => setLayerSizeDraft(current => (current ? { ...current, height: event } : current))}
-              />
-            </FormWithInlineApply>
-          )}
+          {!isHighlightLayer(currentActiveLayer) &&
+            layerSizeDraft &&
+            layerSizeDraft.layerId === currentActiveLayer.id && (
+              <FormWithInlineApply label="Exact Size" onSubmit={applyInspectorSize} disabled={isInspectorSizeUnchanged}>
+                <LabeledInput
+                  label="W"
+                  value={layerSizeDraft.width}
+                  onChange={event => setLayerSizeDraft(current => (current ? { ...current, width: event } : current))}
+                />
+                <LabeledInput
+                  label="H"
+                  value={layerSizeDraft.height}
+                  onChange={event => setLayerSizeDraft(current => (current ? { ...current, height: event } : current))}
+                />
+              </FormWithInlineApply>
+            )}
           {activeHighlight && (
             <>
               <OneInputOneLine label="Color">
-                <InputColor value={activeHighlight.color} onChange={value => applyActiveHighlightStyle({ color: value })} />
+                <InputColor
+                  value={activeHighlight.color}
+                  onChange={value => applyActiveHighlightStyle({ color: value })}
+                />
               </OneInputOneLine>
               <OneInputOneLine label="Opacity">
                 <InputRange
@@ -302,7 +266,10 @@ export function ActiveLayerInspectorSection() {
                 />
               </OneInputOneLine>
               <OneInputOneLine label="Fill">
-                <InputColor value={activeShape.fillColor} onChange={value => applyActiveShapeStyle({ fillColor: value })} />
+                <InputColor
+                  value={activeShape.fillColor}
+                  onChange={value => applyActiveShapeStyle({ fillColor: value })}
+                />
               </OneInputOneLine>
               <OneInputOneLine label="Border">
                 <InputColor

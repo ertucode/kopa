@@ -3,28 +3,34 @@ import { Accordion } from '@/lib/components/accordion'
 import { Input } from '@/lib/components/input'
 import { OneInputOneLine } from '@/lib/components/one-input-one-line'
 import { cn } from '@/lib/functions/clsx'
-import { CustomVariableDraft, ExpressionVariables } from '../utils/customVariableUtils'
+import { CustomVariableDraft } from '../utils/customVariableUtils'
+import { useCustomVariablesStore } from './editorSimpleStores'
+import { useResolvedCustomVariablesValue, useResolvedExpressionVariablesValue } from './editorDerivedValues'
 
 type VariablesSectionProps = {
-  customVariables: CustomVariableDraft[]
-  resolvedCustomVariableErrors: Record<string, string>
-  resolvedExpressionVariables: ExpressionVariables
   onApplyCustomVariables: () => void
-  onAddCustomVariable: () => void
-  onUpdateCustomVariable: (variableId: string, changes: Partial<CustomVariableDraft>) => void
-  onRemoveCustomVariable: (variableId: string) => void
 }
 
-export function VariablesSection({
-  customVariables,
-  resolvedCustomVariableErrors,
-  resolvedExpressionVariables,
-  onApplyCustomVariables,
-  onAddCustomVariable,
-  onUpdateCustomVariable,
-  onRemoveCustomVariable,
-}: VariablesSectionProps) {
+export function VariablesSection({ onApplyCustomVariables }: VariablesSectionProps) {
+  const resolvedCustomVariableErrors = useResolvedCustomVariablesValue().errors
+  const resolvedExpressionVariables = useResolvedExpressionVariablesValue()
+  const [customVariables, setCustomVariables] = useCustomVariablesStore()
+
   const hasErrors = Object.keys(resolvedCustomVariableErrors).length > 0
+
+  function onAddCustomVariable() {
+    setCustomVariables(current => [...current, { id: crypto.randomUUID(), name: '', expression: '' }])
+  }
+
+  function onUpdateCustomVariable(variableId: string, changes: Partial<CustomVariableDraft>) {
+    setCustomVariables(current =>
+      current.map(variable => (variable.id === variableId ? { ...variable, ...changes } : variable))
+    )
+  }
+
+  function onRemoveCustomVariable(variableId: string) {
+    setCustomVariables(current => current.filter(variable => variable.id !== variableId))
+  }
 
   return (
     <section>

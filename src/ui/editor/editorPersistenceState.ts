@@ -5,6 +5,7 @@ export const {
   updateHasUnsavedChangesStoreValue,
   useHasUnsavedChangesStore,
   useHasUnsavedChangesStoreValue,
+  getHasUnsavedChangesStoreValue,
 } = createSimpleStore(false, 'HasUnsavedChanges')
 
 export const isHydratingProjectRef: { current: boolean } = {

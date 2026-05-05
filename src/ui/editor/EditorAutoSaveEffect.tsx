@@ -5,28 +5,25 @@ import {
   useCanvasDraftStoreValue,
   useCustomVariablesStoreValue,
   useHighlightSettingsStoreValue,
+  useInteractionStoreValue,
   useLayerPositionDraftStoreValue,
   useLayerSizeDraftStoreValue,
   useMovementStepStoreValue,
   usePasteSizeDraftStoreValue,
+  useProjectNameStoreValue,
+  useProjectPathStoreValue,
   useSelectionDraftStoreValue,
   useShapeSettingsStoreValue,
   useToolStoreValue,
 } from './editorSimpleStores'
 
 type EditorAutoSaveEffectProps = {
-  interactionActive: boolean
-  projectName: string
-  projectPath: string | null
   saveProjectToPath: (projectPath: string) => Promise<void>
 }
 
-export function EditorAutoSaveEffect({
-  interactionActive,
-  projectName,
-  projectPath,
-  saveProjectToPath,
-}: EditorAutoSaveEffectProps) {
+export function EditorAutoSaveEffect({ saveProjectToPath }: EditorAutoSaveEffectProps) {
+  const interaction = useInteractionStoreValue()
+  const interactionActive = interaction !== null
   const documentState = useDocumentStateStoreValue()
   const history = useHistoryStoreValue()
   const movementStep = useMovementStepStoreValue()
@@ -39,6 +36,8 @@ export function EditorAutoSaveEffect({
   const layerSizeDraft = useLayerSizeDraftStoreValue()
   const pasteSizeDraft = usePasteSizeDraftStoreValue()
   const selectionDraft = useSelectionDraftStoreValue()
+  const projectName = useProjectNameStoreValue()
+  const projectPath = useProjectPathStoreValue()
   const saveProject = useEffectEvent((nextProjectPath: string) => {
     void saveProjectToPath(nextProjectPath)
   })

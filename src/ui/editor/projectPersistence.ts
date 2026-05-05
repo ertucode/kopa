@@ -8,7 +8,8 @@ import {
   EditorProjectSaveRequest,
   EditorProjectUiState,
 } from '@common/EditorProject'
-import { EditorDocument, EditorLayer, HistoryEntry } from './types'
+import { cloneDocument, documentsEqual } from '../utils/documentUtils'
+import { EditorDocument, HistoryEntry } from './types'
 
 type RuntimeHistoryState = {
   past: HistoryEntry[]
@@ -30,33 +31,6 @@ type AssetDescriptor = {
   assetId: string
   mimeType: string
   dataBase64: string
-}
-
-function cloneLayer<T extends EditorLayer>(layer: T): T {
-  if (layer.type === 'highlight') {
-    return {
-      ...layer,
-      points: layer.points.map(point => ({ ...point })),
-    }
-  }
-
-  if (layer.type === 'shape') {
-    return { ...layer }
-  }
-
-  return { ...layer }
-}
-
-function cloneDocument(documentState: EditorDocument): EditorDocument {
-  return {
-    ...documentState,
-    layers: documentState.layers.map(layer => cloneLayer(layer)),
-    selection: documentState.selection ? { ...documentState.selection } : null,
-  }
-}
-
-function documentsEqual(left: EditorDocument | null, right: EditorDocument | null): boolean {
-  return JSON.stringify(left) === JSON.stringify(right)
 }
 
 function parseDataUrl(dataUrl: string): { mimeType: string; dataBase64: string } {

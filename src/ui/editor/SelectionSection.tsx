@@ -1,7 +1,7 @@
 import { Accordion } from '@/lib/components/accordion'
 import { Button } from '@/lib/components/button'
 import { LabeledInput } from '@/lib/components/labeled-input'
-import { useSelectionDraftStore } from './editorSimpleStores'
+import { useIsSavingStoreValue, useSelectionDraftStore } from './editorSimpleStores'
 import { FormWithInlineApply } from './form/FormWithInlineApply'
 
 type SelectionSectionProps = {
@@ -11,7 +11,6 @@ type SelectionSectionProps = {
   onApplySize: () => void
   onCopy: () => void
   onSavePng: () => void
-  isSaving: boolean
 }
 
 export function SelectionSection({
@@ -21,9 +20,9 @@ export function SelectionSection({
   onApplySize,
   onCopy,
   onSavePng,
-  isSaving,
 }: SelectionSectionProps) {
   const [selectionDraft, setSelectionDraft] = useSelectionDraftStore()
+  const isSaving = useIsSavingStoreValue()
 
   if (!selectionDraft) return null
 

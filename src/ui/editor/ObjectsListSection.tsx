@@ -1,28 +1,10 @@
 import { cn } from '@/lib/functions/clsx'
+import { cloneDocument } from '../utils/documentUtils'
 import { useDocumentStateStore, useHistoryStore } from './editorCoreStores'
 import { useActiveLayerValue } from './editorDerivedValues'
-import { EditorDocument, EditorLayer } from './types'
+import { EditorDocument } from './types'
 import { ArrayUtils } from '@common/ArrayUtils'
 import { Accordion } from '@/lib/components/accordion'
-
-function cloneLayer<T extends EditorLayer>(layer: T): T {
-  if (layer.type === 'highlight') {
-    return {
-      ...layer,
-      points: layer.points.map(point => ({ ...point })),
-    }
-  }
-
-  return { ...layer }
-}
-
-function cloneDocument(documentState: EditorDocument): EditorDocument {
-  return {
-    ...documentState,
-    layers: documentState.layers.map(layer => cloneLayer(layer)),
-    selection: documentState.selection ? { ...documentState.selection } : null,
-  }
-}
 
 export function ObjectsListSection() {
   const [documentState, setDocumentState] = useDocumentStateStore()

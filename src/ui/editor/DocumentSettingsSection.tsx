@@ -1,10 +1,6 @@
 import { Accordion } from '@/lib/components/accordion'
 import { LabeledInput } from '@/lib/components/labeled-input'
-import {
-  useCanvasDraftStore,
-  useMovementStepDraftStore,
-  usePasteSizeDraftStore,
-} from './editorSimpleStores'
+import { useCanvasDraftStore, useMovementStepDraftStore, usePasteSizeDraftStore } from './editorSimpleStores'
 import { FormWithInlineApply } from './form/FormWithInlineApply'
 
 type DocumentSettingsSectionProps = {
@@ -31,7 +27,7 @@ export function DocumentSettingsSection({
   return (
     <section>
       <Accordion title="Document Settings" defaultOpen>
-        <div className="space-y-3 bg-base-200/60 text-sm text-base-content/70">
+        <div className="bg-base-200/60 text-sm text-base-content/70">
           <FormWithInlineApply label="Canvs Size" onSubmit={onApplyCanvasDraft} disabled={isCanvasSizeUnchanged}>
             <LabeledInput
               label="W"
