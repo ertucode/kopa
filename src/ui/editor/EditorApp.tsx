@@ -58,11 +58,7 @@ import {
   updateImageRevisionStoreValue,
   getInteractionStoreValue,
 } from './editorSimpleStores'
-import {
-  getDocumentStateStoreValue,
-  updateHistoryStoreValue,
-  useDocumentStateStore,
-} from './editorCoreStores'
+import { getDocumentStateStoreValue, updateHistoryStoreValue, useDocumentStateStore } from './editorCoreStores'
 import {
   useActiveLayerValue,
   useNormalizedMovementStepDraftValue,
@@ -1114,8 +1110,8 @@ export function EditorApp() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-base-100 text-base-content">
       <EditorAutoSaveEffect saveProjectToPath={saveProjectToPath} />
-      <div className="flex min-h-0 flex-1">
-        <aside className="flex w-80 flex-col border-r border-base-content/10">
+      <div className="flex min-h-0 flex-1 bg-base-200/60">
+        <aside className="flex w-80 flex-col border-r border-base-content/10 bg-base-200/60  ">
           <EditorToolBarSection />
           <HighlightToolSection />
 
@@ -1200,7 +1196,7 @@ export function EditorApp() {
               )}
             </section>
 
-            <aside className="flex min-h-0 w-80 flex-col overflow-y-auto border-l border-base-content/10">
+            <aside className="flex min-h-0 w-80 flex-col overflow-y-auto border-l border-base-content/10 bg-base-200/60  ">
               <ProjectSection
                 onApplyProjectName={applyProjectName}
                 onSaveProject={handleSaveProject}
