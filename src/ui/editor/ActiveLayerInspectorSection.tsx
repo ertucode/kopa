@@ -172,10 +172,11 @@ export function ActiveLayerInspectorSection() {
         <div className="bg-base-200/60 text-sm text-base-content/70">
           <div className="flex gap-2 text-xs">
             {isImageLayer(currentActiveLayer) && (
-              <div>
-                Raster size: {formatPixels(currentActiveLayer.pixelWidth)}x
-                {formatPixels(currentActiveLayer.pixelHeight)}
-              </div>
+              <OneInputOneLine label="Raster size">
+                <div className="text-xs h-7 flex items-center ">
+                  {formatPixels(currentActiveLayer.pixelWidth)}x{formatPixels(currentActiveLayer.pixelHeight)}
+                </div>
+              </OneInputOneLine>
             )}
           </div>
           {layerPositionDraft && layerPositionDraft.layerId === currentActiveLayer.id && (
