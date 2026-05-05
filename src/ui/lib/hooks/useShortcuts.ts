@@ -158,6 +158,14 @@ function getCodeSpecificity(code: ShortcutCode): number {
   return specificity;
 }
 
+function isEditableEventTarget(target: EventTarget | null): boolean {
+  if (target instanceof HTMLInputElement) return true;
+  if (target instanceof HTMLTextAreaElement) return true;
+  if (target instanceof HTMLSelectElement) return true;
+  if (target instanceof HTMLElement && target.isContentEditable) return true;
+  return false;
+}
+
 function checkEnabledIn(
   enabledIn:
     | RefObject<HTMLElement | null>
@@ -165,7 +173,7 @@ function checkEnabledIn(
     | undefined,
   e: KeyboardEvent,
 ): boolean {
-  if (e.target instanceof HTMLInputElement) {
+  if (isEditableEventTarget(e.target)) {
     if (!enabledIn) return false;
     if (typeof enabledIn === "function") {
       return enabledIn(e);
