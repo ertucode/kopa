@@ -41,6 +41,7 @@ electron.contextBridge.exposeInMainWorld('electron', {
   }) => ipcInvoke('saveEditorProjectAs', request),
   loadEditorProjectAsset: (request: { projectPath: string; assetId: string }) => ipcInvoke('loadEditorProjectAsset', request),
   getRecentEditorProjects: () => ipcInvoke('getRecentEditorProjects', undefined),
+  openEditorImageFiles: () => ipcInvoke('openEditorImageFiles', undefined),
 } satisfies WindowElectron)
 
 function ipcInvoke<Key extends keyof EventResponseMapping>(

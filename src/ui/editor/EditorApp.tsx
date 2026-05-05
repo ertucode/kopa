@@ -4,7 +4,7 @@ import { ContextMenu, ContextMenuList, useContextMenu } from '@/lib/components/c
 import { useShortcuts } from '@/lib/hooks/useShortcuts'
 import { getWindowElectron, windowArgs } from '@/getWindowElectron'
 import { pointInRect, snapToStep } from '@common/TransformUtils'
-import { createLayerFromFile, loadImageElement } from './raster'
+import { createLayerFromDataUrl, createLayerFromFile, loadImageElement } from './raster'
 import { EditorDocument } from './types'
 import { drawShapeLayer } from './shapeUtils'
 import { drawHighlightLayer } from './highlightUtils'
@@ -82,7 +82,6 @@ import { DocumentSettingsSection } from './DocumentSettingsSection'
 import { ActiveLayerInspectorSection } from './ActiveLayerInspectorSection'
 import { EditorFooter } from './EditorFooter'
 import { EditorToolBarSection } from './EditorToolBarSection'
-import { EditorTopBar } from './EditorTopBar'
 import { EmptyProjectState } from './EmptyProjectState'
 import { ObjectsListSection } from './ObjectsListSection'
 import { ProjectSection } from './ProjectSection'
@@ -603,6 +602,27 @@ export function EditorApp() {
     }
   }
 
+  async function importImageData(files: Array<{ name: string; dataUrl: string }>) {
+    if (!documentState) return
+    if (files.length === 0) return
+
+    try {
+      let nextDocument = cloneDocument(documentState)
+      for (const file of files) {
+        const layer = await createLayerFromDataUrl(file.name, file.dataUrl, nextDocument)
+        nextDocument = {
+          ...nextDocument,
+          layers: [...nextDocument.layers, layer],
+          activeLayerId: layer.id,
+          selection: null,
+        }
+      }
+      pushHistory(files.length > 1 ? 'Place images' : 'Place image', documentState, nextDocument)
+    } catch (error) {
+      updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to import image')
+    }
+  }
+
   function deleteLayer(layerId: string) {
     if (!documentState) return
     const layerIndex = documentState.layers.findIndex(layer => layer.id === layerId)
@@ -705,6 +725,41 @@ export function EditorApp() {
       label: '[Editor] Delete selected object',
     },
   ])
+
+  useEffect(() => {
+    return getWindowElectron().onGenericEvent(event => {
+      if (event.type !== 'editor-action') return
+
+      if (event.action === 'new-project') {
+        createNewDocument(1024, 1024)
+        return
+      }
+      if (event.action === 'open-project') {
+        void handleOpenProject()
+        return
+      }
+      if (event.action === 'open-recent-project') {
+        void handleOpenRecentProject(event.projectPath)
+        return
+      }
+      if (event.action === 'save-project') {
+        void handleSaveProject()
+        return
+      }
+      if (event.action === 'save-png') {
+        void saveFinalImage()
+        return
+      }
+      return
+    })
+  }, [handleOpenProject, handleSaveProject, saveFinalImage])
+
+  useEffect(() => {
+    return getWindowElectron().onGenericEvent(event => {
+      if (event.type !== 'editor-import-images') return
+      void importImageData(event.files)
+    })
+  }, [documentState])
 
   async function handleCanvasPointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
     if (!documentState) return
@@ -1079,14 +1134,6 @@ export function EditorApp() {
         </aside>
 
         <main className="flex min-h-0 flex-1 flex-col">
-          <EditorTopBar
-            onCreateNewProject={() => createNewDocument(1024, 1024)}
-            onOpenProject={handleOpenProject}
-            onSaveProject={handleSaveProject}
-            onSaveFinalImage={saveFinalImage}
-            onImportFiles={importFiles}
-          />
-
           <div className="flex min-h-0 flex-1">
             <section
               ref={viewportRef}
@@ -1158,7 +1205,6 @@ export function EditorApp() {
                 onApplyProjectName={applyProjectName}
                 onSaveProject={handleSaveProject}
                 onOpenProject={handleOpenProject}
-                onOpenRecentProject={handleOpenRecentProject}
               />
 
               {documentState && (

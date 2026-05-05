@@ -25,6 +25,7 @@ export type EventResponseMapping = {
   saveEditorProjectAs: Promise<{ canceled: boolean; projectPath?: string }>
   loadEditorProjectAsset: Promise<string>
   getRecentEditorProjects: Promise<RecentEditorProject[]>
+  openEditorImageFiles: Promise<{ canceled: boolean; files: Array<{ name: string; dataUrl: string }> }>
 }
 
 export type EventRequestMapping = {
@@ -44,6 +45,7 @@ export type EventRequestMapping = {
   saveEditorProjectAs: { request: EditorProjectSaveRequest; defaultName: string }
   loadEditorProjectAsset: { projectPath: string; assetId: string }
   getRecentEditorProjects: void
+  openEditorImageFiles: void
 }
 
 export type EventRequest<Key extends keyof EventResponseMapping> = Key extends keyof EventRequestMapping
@@ -54,8 +56,8 @@ export type UnsubscribeFunction = () => void
 
 export type WindowElectron = {
   getParallelPreloadPath: () => Promise<string>
-  onTaskEvent: (cb: (e: TaskEvents) => void) => void
-  onGenericEvent: (cb: (e: GenericEvent) => void) => void
+  onTaskEvent: (cb: (e: TaskEvents) => void) => UnsubscribeFunction
+  onGenericEvent: (cb: (e: GenericEvent) => void) => UnsubscribeFunction
   onWindowFocus: (cb: () => void) => UnsubscribeFunction
   abortTask: (taskId: string) => Promise<void>
   openShell: (url: string) => Promise<void>
@@ -76,4 +78,5 @@ export type WindowElectron = {
   }) => Promise<{ canceled: boolean; projectPath?: string }>
   loadEditorProjectAsset: (request: { projectPath: string; assetId: string }) => Promise<string>
   getRecentEditorProjects: () => Promise<RecentEditorProject[]>
+  openEditorImageFiles: () => Promise<{ canceled: boolean; files: Array<{ name: string; dataUrl: string }> }>
 }

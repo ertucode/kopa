@@ -19,6 +19,10 @@ export async function loadImageElement(src: string): Promise<HTMLImageElement> {
 
 export async function createLayerFromFile(file: File, document: EditorDocument): Promise<ImageLayer> {
   const dataUrl = await readFileAsDataUrl(file)
+  return await createLayerFromDataUrl(file.name, dataUrl, document)
+}
+
+export async function createLayerFromDataUrl(name: string, dataUrl: string, document: EditorDocument): Promise<ImageLayer> {
   const image = await loadImageElement(dataUrl)
   const width = document.pasteWidth === null ? image.naturalWidth : Math.max(1, Math.round(document.pasteWidth))
   const height = document.pasteHeight === null ? image.naturalHeight : Math.max(1, Math.round(document.pasteHeight))
@@ -26,7 +30,7 @@ export async function createLayerFromFile(file: File, document: EditorDocument):
   return {
     id: crypto.randomUUID(),
     type: 'image',
-    name: file.name,
+    name,
     visible: true,
     opacity: 1,
     x: Math.round((document.width - width) / 2),

@@ -11,6 +11,7 @@ import { initializeDatabase } from './db/index.js'
 import { serializeWindowArguments, WindowArguments } from '../common/WindowArguments.js'
 import { runCommand } from './utils/run-command.js'
 import { getServerConfig } from './server-config.js'
+import { buildAppMenuTemplate, openEditorImageFiles } from './utils/app-menu.js'
 import {
   getRecentEditorProjects,
   loadEditorProject,
@@ -94,63 +95,13 @@ app.on('ready', () => {
     })
   }
 
-  const menuTemplate: Electron.MenuItemConstructorOptions[] = [
-    {
-      label: 'File',
-      submenu: [
-        {
-          label: 'New Window',
-          accelerator: 'CmdOrCtrl+N',
-          click: () => {
-            createWindow()
-          },
-        },
-        { type: 'separator' },
-        {
-          label: 'Close Window',
-          accelerator: 'CmdOrCtrl+W',
-          role: 'close',
-        },
-        {
-          label: 'Quit',
-          accelerator: 'CmdOrCtrl+Q',
-          role: 'quit',
-        },
-      ],
-    },
-    {
-      label: 'Edit',
-      submenu: [
-        { label: 'Undo', accelerator: 'CmdOrCtrl+Z', role: 'undo' },
-        { label: 'Redo', accelerator: 'Shift+CmdOrCtrl+Z', role: 'redo' },
-        { type: 'separator' },
-        { label: 'Cut', accelerator: 'CmdOrCtrl+X', role: 'cut' },
-        { label: 'Copy', accelerator: 'CmdOrCtrl+C', role: 'copy' },
-        { label: 'Paste', accelerator: 'CmdOrCtrl+V', role: 'paste' },
-        { type: 'separator' },
-        { label: 'Select All', accelerator: 'CmdOrCtrl+A', role: 'selectAll' },
-      ],
-    },
-    {
-      label: 'View',
-      submenu: [
-        { label: 'Reload', accelerator: 'CmdOrCtrl+R', role: 'reload' },
-        {
-          label: 'Toggle Developer Tools',
-          accelerator: 'Alt+CmdOrCtrl+I',
-          role: 'toggleDevTools',
-        },
-        { type: 'separator' },
-        {
-          label: 'Toggle Fullscreen',
-          accelerator: 'Ctrl+Command+F',
-          role: 'togglefullscreen',
-        },
-      ],
-    },
-  ]
-  const menu = Menu.buildFromTemplate(menuTemplate)
-  Menu.setApplicationMenu(menu)
+  async function refreshApplicationMenu() {
+    const menuTemplate = await buildAppMenuTemplate(createWindow, app.getPath('userData'))
+    const menu = Menu.buildFromTemplate(menuTemplate)
+    Menu.setApplicationMenu(menu)
+  }
+
+  void refreshApplicationMenu()
 
   app.on('web-contents-created', (_event, contents) => {
     if (contents.getType() !== 'webview') return
@@ -288,6 +239,7 @@ app.on('ready', () => {
     const projectPath = response.filePaths[0]
     const project = await loadEditorProject(projectPath)
     await rememberRecentEditorProject(app.getPath('userData'), projectPath, project.name)
+    await refreshApplicationMenu()
 
     return {
       canceled: false,
@@ -299,6 +251,7 @@ app.on('ready', () => {
   ipcHandle('loadEditorProject', async request => {
     const project = await loadEditorProject(request.projectPath)
     await rememberRecentEditorProject(app.getPath('userData'), request.projectPath, project.name)
+    await refreshApplicationMenu()
     return {
       projectPath: request.projectPath,
       project,
@@ -308,6 +261,7 @@ app.on('ready', () => {
   ipcHandle('saveEditorProject', async request => {
     await saveEditorProject(request.projectPath, request.request)
     await rememberRecentEditorProject(app.getPath('userData'), request.projectPath, request.request.project.name)
+    await refreshApplicationMenu()
     return {
       projectPath: request.projectPath,
     }
@@ -332,6 +286,7 @@ app.on('ready', () => {
     const projectPath = response.filePaths[0]
     await saveEditorProject(projectPath, request.request)
     await rememberRecentEditorProject(app.getPath('userData'), projectPath, request.request.project.name)
+    await refreshApplicationMenu()
 
     return {
       canceled: false,
@@ -345,6 +300,11 @@ app.on('ready', () => {
 
   ipcHandle('getRecentEditorProjects', async () => {
     return await getRecentEditorProjects(app.getPath('userData'))
+  })
+
+  ipcHandle('openEditorImageFiles', async (_request, event) => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    return await openEditorImageFiles(window)
   })
 
   TaskManager.addListener(e => {
