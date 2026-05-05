@@ -1,63 +1,40 @@
-import {
-  MousePointer2Icon,
-  Redo2Icon,
-  ScanLineIcon,
-  Undo2Icon,
-} from 'lucide-react'
+import { Highlighter, MousePointer2Icon, ScanLineIcon, ShapesIcon } from 'lucide-react'
 import { cn } from '@/lib/functions/clsx'
 import { useToolStore } from './editorSimpleStores'
+import { EditorTool } from './types'
+import { Tooltip } from '@/lib/components/Tooltip'
 
-type EditorToolBarSectionProps = {
-  onUndo: () => void
-  onRedo: () => void
-  canUndo: boolean
-  canRedo: boolean
+type EditorToolBarSectionProps = {}
+
+export function EditorToolBarSection(_: EditorToolBarSectionProps) {
+  return (
+    <div className="flex flex-wrap">
+      <Btn tool="select" title="Select and transform objects" Icon={MousePointer2Icon} />
+      <Btn tool="marquee" title="Create a rectangular canvas selection" Icon={ScanLineIcon} />
+      <Btn tool="highlight" title="Paint highlight objects" Icon={Highlighter} />
+      <Btn tool="shape" title="Create shape objects" Icon={ShapesIcon} />
+    </div>
+  )
 }
 
-export function EditorToolBarSection({
-  onUndo,
-  onRedo,
-  canUndo,
-  canRedo,
-}: EditorToolBarSectionProps) {
-  const [tool, setTool] = useToolStore()
-
+function Btn({
+  tool,
+  title,
+  Icon,
+}: {
+  tool: EditorTool
+  title: string
+  Icon: React.ComponentType<{ className: string }>
+}) {
+  const [currentTool, setTool] = useToolStore()
   return (
-    <div className="flex gap-2 flex-wrap">
+    <Tooltip placement="right" content={title}>
       <button
-        className={cn('btn btn-square btn-sm', tool === 'select' ? 'btn-info' : 'btn-ghost')}
-        onClick={() => setTool('select')}
-        title="Select and transform objects"
+        className={cn('btn btn-square btn-sm rounded-none', tool === currentTool ? 'btn-info' : 'btn-ghost')}
+        onClick={() => setTool(tool)}
       >
-        <MousePointer2Icon className="size-4" />
+        <Icon className="size-4" />
       </button>
-      <button
-        className={cn('btn btn-square btn-sm', tool === 'marquee' ? 'btn-info' : 'btn-ghost')}
-        onClick={() => setTool('marquee')}
-        title="Create a rectangular canvas selection"
-      >
-        <ScanLineIcon className="size-4" />
-      </button>
-      <button
-        className={cn('btn btn-square btn-sm', tool === 'highlight' ? 'btn-info' : 'btn-ghost')}
-        onClick={() => setTool('highlight')}
-        title="Paint highlight objects"
-      >
-        <span className="text-xs font-semibold">H</span>
-      </button>
-      <button
-        className={cn('btn btn-square btn-sm', tool === 'shape' ? 'btn-info' : 'btn-ghost')}
-        onClick={() => setTool('shape')}
-        title="Create shape objects"
-      >
-        <span className="text-xs font-semibold">S</span>
-      </button>
-      <button className="btn btn-square btn-sm btn-ghost" onClick={onUndo} disabled={!canUndo} title="Undo">
-        <Undo2Icon className="size-4" />
-      </button>
-      <button className="btn btn-square btn-sm btn-ghost" onClick={onRedo} disabled={!canRedo} title="Redo">
-        <Redo2Icon className="size-4" />
-      </button>
-    </div>
+    </Tooltip>
   )
 }

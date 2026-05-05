@@ -1,14 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import useMeasure from 'react-use-measure'
-import {
-  FolderOpenIcon,
-  ImagePlusIcon,
-  SaveIcon,
-} from 'lucide-react'
-import { Button } from '@/lib/components/button'
 import { ContextMenu, ContextMenuList, useContextMenu } from '@/lib/components/context-menu'
 import { useShortcuts } from '@/lib/hooks/useShortcuts'
-import { cn } from '@/lib/functions/clsx'
 import { getWindowElectron, windowArgs } from '@/getWindowElectron'
 import { clamp, normalizeRect, Point, pointInRect, Rect, snapToStep } from '@common/TransformUtils'
 import { createLayerFromFile, cutSelectionFromDocument, loadImageElement } from './raster'
@@ -37,11 +30,7 @@ import {
   drawHighlightLayer,
   HighlightSettingsState,
 } from './highlightUtils'
-import {
-  CustomVariableDraft,
-  parseRoundedMathExpression,
-  resolveCustomVariables,
-} from '../utils/customVariableUtils'
+import { CustomVariableDraft, parseRoundedMathExpression, resolveCustomVariables } from '../utils/customVariableUtils'
 import {
   CanvasDraftState,
   DEFAULT_EDITOR_SESSION,
@@ -104,9 +93,12 @@ import { EditorErrorDialog } from './EditorErrorDialog'
 import { SelectionSection } from './SelectionSection'
 import { DocumentSettingsSection } from './DocumentSettingsSection'
 import { ActiveLayerInspectorSection } from './ActiveLayerInspectorSection'
+import { EditorFooter } from './EditorFooter'
 import { EditorToolBarSection } from './EditorToolBarSection'
+import { EditorTopBar } from './EditorTopBar'
 import { EmptyProjectState } from './EmptyProjectState'
 import { ObjectsListSection } from './ObjectsListSection'
+import { ProjectSection } from './ProjectSection'
 import { VariablesSection } from './VariablesSection'
 
 type CanvasContextMenuItem =
@@ -256,13 +248,12 @@ export function EditorApp() {
   const [selectionDraft, setSelectionDraft] = useSelectionDraftStore()
   const [projectNameDraft, setProjectNameDraft] = useProjectNameDraftStore()
   const [isSaving, setIsSaving] = useIsSavingStore()
-  const [isProjectSaving, setIsProjectSaving] = useIsProjectSavingStore()
+  const [, setIsProjectSaving] = useIsProjectSavingStore()
   const [projectPath, setProjectPath] = useProjectPathStore()
   const [projectName, setProjectName] = useProjectNameStore()
-  const [recentProjects, setRecentProjects] = useRecentProjectsStore()
+  const [, setRecentProjects] = useRecentProjectsStore()
   const hasUnsavedChanges = useHasUnsavedChangesStoreValue()
   const [viewportRef, viewportBounds] = useMeasure()
-  const inputRef = useRef<HTMLInputElement>(null)
   const mainCanvasRef = useRef<HTMLCanvasElement>(null)
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null)
   const imageCacheRef = useRef(new Map<string, HTMLImageElement>())
@@ -1808,96 +1799,38 @@ export function EditorApp() {
         saveProjectToPath={saveProjectToPath}
       />
       <div className="flex min-h-0 flex-1">
-        <aside className="flex w-80 flex-col items-start gap-3 border-r border-base-content/10 px-3 py-4">
-          <EditorToolBarSection
-            onUndo={handleUndo}
-            onRedo={handleRedo}
-            canUndo={history.past.length > 0}
-            canRedo={history.future.length > 0}
-          />
-          <div className="flex flex-col gap-2">
-            <HighlightToolSection />
+        <aside className="flex w-80 flex-col border-r border-base-content/10">
+          <EditorToolBarSection />
+          <HighlightToolSection />
 
-            <ShapeToolSection />
+          <ShapeToolSection />
 
-            {documentState?.selection && selectionDraft && (
-              <SelectionSection
-                canApplyPosition={!isSelectionPositionUnchanged}
-                canApplySize={!isSelectionSizeUnchanged}
-                onApplyPosition={applySelectionPosition}
-                onApplySize={applySelectionSize}
-                onCopy={() => void copySelectionToClipboard()}
-                onSavePng={() => void saveSelectionImage()}
-                isSaving={isSaving}
-              />
-            )}
-            <section>
-              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">History</div>
-              <div className="rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
-                <div>{history.past.length} undo step(s)</div>
-                <div>{history.future.length} redo step(s)</div>
-              </div>
-            </section>
-          </div>
+          {documentState?.selection && selectionDraft && (
+            <SelectionSection
+              canApplyPosition={!isSelectionPositionUnchanged}
+              canApplySize={!isSelectionSizeUnchanged}
+              onApplyPosition={applySelectionPosition}
+              onApplySize={applySelectionSize}
+              onCopy={() => void copySelectionToClipboard()}
+              onSavePng={() => void saveSelectionImage()}
+              isSaving={isSaving}
+            />
+          )}
         </aside>
 
         <main className="flex min-h-0 flex-1 flex-col">
-          <div className="flex flex-wrap items-center gap-3 border-b border-base-content/10 px-4 py-3">
-            <Button className="btn-sm btn-soft" onClick={() => createNewDocument(1024, 1024)}>
-              New Project
-            </Button>
-            <Button icon={FolderOpenIcon} className="btn-sm btn-soft" onClick={() => void handleOpenProject()}>
-              Open Project
-            </Button>
-            <Button className="btn-sm btn-soft" onClick={() => void handleSaveProject()} disabled={isProjectSaving}>
-              {projectPath ? 'Save Project' : 'Save Project As'}
-            </Button>
-            <Button
-              icon={ImagePlusIcon}
-              className="btn-sm"
-              onClick={() => inputRef.current?.click()}
-              disabled={!documentState}
-            >
-              Place image
-            </Button>
-            <Button
-              icon={SaveIcon}
-              className="btn-sm"
-              onClick={() => void saveFinalImage()}
-              disabled={!documentState || isSaving}
-            >
-              Save PNG
-            </Button>
-            <div className="text-sm text-base-content/70">
-              <span className="font-medium text-base-content">{projectName}</span>
-              {hasUnsavedChanges ? ' *' : ''}
-              {documentState ? ` • Canvas ${documentState.width} x ${documentState.height}` : ''}
-            </div>
-            <div className="ml-auto text-xs text-base-content/50">
-              {projectPath ? `Folder: ${projectPath}` : 'Project not saved yet.'}
-            </div>
-            <div className="text-xs text-base-content/50">
-              Hold <kbd className="kbd kbd-xs">Shift</kbd> while resizing to keep aspect ratio.
-            </div>
-            <input
-              ref={inputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              multiple
-              onChange={event => {
-                if (event.target.files) {
-                  void importFiles(event.target.files)
-                  event.target.value = ''
-                }
-              }}
-            />
-          </div>
+          <EditorTopBar
+            onCreateNewProject={() => createNewDocument(1024, 1024)}
+            onOpenProject={handleOpenProject}
+            onSaveProject={handleSaveProject}
+            onSaveFinalImage={saveFinalImage}
+            onImportFiles={importFiles}
+          />
 
           <div className="flex min-h-0 flex-1">
             <section
               ref={viewportRef}
-              className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(95,157,255,0.15),_transparent_40%),linear-gradient(180deg,rgba(18,22,31,1),rgba(12,14,19,1))]"
+              className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden "
               onDragOver={event => {
                 event.preventDefault()
               }}
@@ -1916,7 +1849,7 @@ export function EditorApp() {
 
               {documentState && (
                 <div
-                  className="relative rounded-2xl border border-white/10 bg-[#11141b] shadow-[0_30px_80px_rgba(0,0,0,0.45)]"
+                  className="relative border border-white/10 bg-[#11141b]"
                   onContextMenu={event => {
                     if (!documentState) return
                     const canvas = overlayCanvasRef.current
@@ -1960,96 +1893,33 @@ export function EditorApp() {
               )}
             </section>
 
-            <aside className="flex min-h-0 w-80 flex-col gap-2 overflow-y-auto border-l border-base-content/10 px-4 py-4">
-              <section>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">
-                  Project
-                </div>
-                <div className="space-y-3 rounded-2xl border border-base-content/10 bg-base-200/60 p-4 text-sm text-base-content/70">
-                  <form
-                    className="space-y-2"
-                    onSubmit={event => {
-                      event.preventDefault()
-                      applyProjectName()
-                    }}
-                  >
-                    <label className="form-control gap-2">
-                      <span className="label text-xs">Project name</span>
-                      <div className="grid grid-cols-[1fr_auto] gap-2">
-                        <input
-                          className="input input-sm"
-                          value={projectNameDraft.value}
-                          onChange={event => setProjectNameDraft({ value: event.target.value })}
-                        />
-                        <button
-                          type="submit"
-                          className="btn btn-sm btn-info"
-                          disabled={
-                            projectNameDraft.value.trim().length === 0 || projectNameDraft.value.trim() === projectName
-                          }
-                        >
-                          Rename
-                        </button>
-                      </div>
-                    </label>
-                    <div className="break-all text-xs text-base-content/55">
-                      {projectPath ?? 'Unsaved project folder'}
-                    </div>
-                  </form>
-                  <div className="text-xs text-base-content/55">
-                    {hasUnsavedChanges ? 'Changes pending save.' : 'Project is saved.'}
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      className="btn-sm flex-1"
-                      onClick={() => void handleSaveProject()}
-                      disabled={isProjectSaving}
-                    >
-                      Save
-                    </Button>
-                    <Button className="btn-sm btn-soft flex-1" onClick={() => void handleOpenProject()}>
-                      Open
-                    </Button>
-                  </div>
-                  {recentProjects.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">
-                        Switch project
-                      </div>
-                      <div className="space-y-2">
-                        {recentProjects.map(project => (
-                          <button
-                            key={project.projectPath}
-                            className={cn(
-                              'w-full rounded-xl border px-3 py-2 text-left text-xs transition',
-                              project.projectPath === projectPath
-                                ? 'border-info/60 bg-info/10 text-base-content'
-                                : 'border-base-content/10 bg-base-100/40 text-base-content/75 hover:border-info/60 hover:bg-base-100'
-                            )}
-                            onClick={() => void handleOpenRecentProject(project.projectPath)}
-                          >
-                            <div className="truncate font-medium">{project.name}</div>
-                            <div className="truncate text-[11px] text-base-content/50">{project.projectPath}</div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </section>
+            <aside className="flex min-h-0 w-80 flex-col overflow-y-auto border-l border-base-content/10">
+              <ProjectSection
+                onApplyProjectName={applyProjectName}
+                onSaveProject={handleSaveProject}
+                onOpenProject={handleOpenProject}
+                onOpenRecentProject={handleOpenRecentProject}
+              />
 
               {documentState && (
                 <DocumentSettingsSection
                   isCanvasSizeUnchanged={
-                    parseRoundedMathExpression(canvasDraft.width, resolvedExpressionVariables) === documentState.width &&
+                    parseRoundedMathExpression(canvasDraft.width, resolvedExpressionVariables) ===
+                      documentState.width &&
                     parseRoundedMathExpression(canvasDraft.height, resolvedExpressionVariables) === documentState.height
                   }
                   isPasteSizeUnchanged={
                     (pasteSizeDraft.width.trim().length
-                      ? Math.max(1, parseRoundedMathExpression(pasteSizeDraft.width, resolvedExpressionVariables) ?? Number.NaN)
+                      ? Math.max(
+                          1,
+                          parseRoundedMathExpression(pasteSizeDraft.width, resolvedExpressionVariables) ?? Number.NaN
+                        )
                       : null) === documentState.pasteWidth &&
                     (pasteSizeDraft.height.trim().length
-                      ? Math.max(1, parseRoundedMathExpression(pasteSizeDraft.height, resolvedExpressionVariables) ?? Number.NaN)
+                      ? Math.max(
+                          1,
+                          parseRoundedMathExpression(pasteSizeDraft.height, resolvedExpressionVariables) ?? Number.NaN
+                        )
                       : null) === documentState.pasteHeight
                   }
                   isMovementStepUnchanged={movementStep === String(normalizedMovementStepDraft)}
@@ -2075,25 +1945,7 @@ export function EditorApp() {
             </aside>
           </div>
 
-          <div className="flex items-center justify-between border-t border-base-content/10 px-4 py-2 text-xs text-base-content/55">
-            <div>
-              Tool:{' '}
-              <span className="text-base-content/80">
-                {tool === 'select'
-                  ? 'Select'
-                  : tool === 'marquee'
-                    ? 'Marquee'
-                    : tool === 'highlight'
-                      ? 'Highlight'
-                      : 'Shape'}
-              </span>
-            </div>
-            <div>
-              Shortcuts: <kbd className="kbd kbd-xs">Cmd</kbd> + <kbd className="kbd kbd-xs">Z</kbd> undo,{' '}
-              <kbd className="kbd kbd-xs">Shift</kbd> + <kbd className="kbd kbd-xs">Cmd</kbd> +{' '}
-              <kbd className="kbd kbd-xs">Z</kbd> redo
-            </div>
-          </div>
+          <EditorFooter />
         </main>
       </div>
 
