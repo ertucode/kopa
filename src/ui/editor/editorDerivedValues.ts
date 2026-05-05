@@ -7,7 +7,7 @@ import {
   MovementStepDraftStore,
   MovementStepStore,
 } from './editorSimpleStores'
-import { EditorDocument, EditorLayer, HighlightLayer, ShapeLayer } from './types'
+import { EditorDocument, EditorLayer, HighlightLayer, ShapeLayer, TextLayer } from './types'
 
 function getActiveLayer(documentState: EditorDocument | null): EditorLayer | null {
   if (!documentState?.activeLayerId) return null
@@ -20,6 +20,10 @@ function isHighlightLayer(layer: EditorLayer | null): layer is HighlightLayer {
 
 function isShapeLayer(layer: EditorLayer | null): layer is ShapeLayer {
   return layer?.type === 'shape'
+}
+
+function isTextLayer(layer: EditorLayer | null): layer is TextLayer {
+  return layer?.type === 'text'
 }
 
 export function useActiveLayerValue() {
@@ -37,6 +41,13 @@ export function useActiveShapeValue() {
   return useSelector(DocumentStateStore, snapshot => {
     const activeLayer = getActiveLayer(snapshot.context.value)
     return isShapeLayer(activeLayer) ? activeLayer : null
+  })
+}
+
+export function useActiveTextValue() {
+  return useSelector(DocumentStateStore, snapshot => {
+    const activeLayer = getActiveLayer(snapshot.context.value)
+    return isTextLayer(activeLayer) ? activeLayer : null
   })
 }
 

@@ -1,6 +1,7 @@
 import { CustomVariableDraft } from '@/utils/customVariableUtils'
 import { HighlightSettingsState } from './highlightUtils'
 import { ShapeSettingsState } from './shapeUtils'
+import { DEFAULT_FONT_FAMILY, TextSettingsState } from './textUtils'
 import { EditorTool } from './types'
 
 export type CanvasDraftState = {
@@ -51,6 +52,7 @@ export type EditorSessionState = {
   variables: CustomVariableDraft[]
   highlightSettings: HighlightSettingsState
   shapeSettings: ShapeSettingsState
+  textSettings: TextSettingsState
 }
 
 export const DEFAULT_EDITOR_SESSION: EditorSessionState = {
@@ -76,5 +78,14 @@ export const DEFAULT_EDITOR_SESSION: EditorSessionState = {
     borderWidth: 2,
     borderRadius: 16,
     opacity: 0.8,
+  },
+  textSettings: {
+    text: 'Default Text',
+    fontFamily: DEFAULT_FONT_FAMILY,
+    fontSize: 48,
+    fontWeight: 400,
+    italic: false,
+    underline: false,
+    color: '#ffffff',
   },
 }

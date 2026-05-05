@@ -5,7 +5,8 @@ function getToolLabel(tool: ReturnType<typeof useToolStoreValue>) {
   if (tool === 'select') return 'Select'
   if (tool === 'marquee') return 'Marquee'
   if (tool === 'highlight') return 'Highlight'
-  return 'Shape'
+  if (tool === 'shape') return 'Shape'
+  return 'Text'
 }
 
 export function EditorFooter() {

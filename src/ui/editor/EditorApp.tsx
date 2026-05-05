@@ -5,6 +5,7 @@ import { useShortcuts } from '@/lib/hooks/useShortcuts'
 import { getWindowElectron, windowArgs } from '@/getWindowElectron'
 import { pointInRect, snapToStep } from '@common/TransformUtils'
 import { createLayerFromDataUrl, createLayerFromFile, loadImageElement } from './raster'
+import { drawTextLayer } from './textUtils'
 import { EditorDocument } from './types'
 import { drawShapeLayer } from './shapeUtils'
 import { drawHighlightLayer } from './highlightUtils'
@@ -18,6 +19,7 @@ import {
   isHighlightLayer,
   isImageLayer,
   isShapeLayer,
+  isTextLayer,
 } from '../utils/documentUtils'
 import {
   beginHighlightCreation,
@@ -25,6 +27,7 @@ import {
   beginResize,
   beginSelectionCreation,
   beginShapeCreation,
+  beginTextCreation,
   cancelInteraction,
   finalizeInteraction,
   finishSelectionMove,
@@ -75,6 +78,7 @@ import { HighlightToolSection } from './HighlightToolSection'
 import { ImagePreviewDialog } from './ImagePreviewDialog'
 import { EditorErrorDialog } from './EditorErrorDialog'
 import { SelectionSection } from './SelectionSection'
+import { TextToolSection } from './TextToolSection'
 import { DocumentSettingsSection } from './DocumentSettingsSection'
 import { ActiveLayerInspectorSection } from './ActiveLayerInspectorSection'
 import { EditorFooter } from './EditorFooter'
@@ -215,7 +219,7 @@ export function EditorApp() {
 
       if (layerSizeDraft) {
         const layer = nextDocument.layers.find(item => item.id === layerSizeDraft.layerId)
-        if (layer && !isHighlightLayer(layer)) {
+        if (layer && !isHighlightLayer(layer) && !isTextLayer(layer)) {
           const layerVariables = {
             ...resolvedVariables,
             imageX: layer.x,
@@ -342,7 +346,7 @@ export function EditorApp() {
     })
 
     setLayerSizeDraft(current => {
-      if (isHighlightLayer(activeLayer)) {
+      if (isHighlightLayer(activeLayer) || isTextLayer(activeLayer)) {
         return null
       }
 
@@ -493,6 +497,10 @@ export function EditorApp() {
       }
       if (isShapeLayer(layer)) {
         drawShapeLayer(mainContext, layer)
+        continue
+      }
+      if (isTextLayer(layer)) {
+        drawTextLayer(mainContext, layer)
         continue
       }
       const image = imageCache.get(layer.dataUrl)
@@ -872,6 +880,11 @@ export function EditorApp() {
 
     if (tool === 'shape') {
       beginShapeCreation(pointer)
+      return
+    }
+
+    if (tool === 'text') {
+      beginTextCreation(pointer)
     }
   }
 
@@ -913,7 +926,13 @@ export function EditorApp() {
     if (interaction.type === 'moving-layer') {
       const layer = documentState.layers.find(item => item.id === interaction.layerId)
       finalizeInteraction(
-        layer?.type === 'highlight' ? 'Move highlight' : layer?.type === 'shape' ? 'Move shape' : 'Move image'
+        layer?.type === 'highlight'
+          ? 'Move highlight'
+          : layer?.type === 'shape'
+            ? 'Move shape'
+            : layer?.type === 'text'
+              ? 'Move text'
+              : 'Move image'
       )
       return
     }
@@ -1026,7 +1045,7 @@ export function EditorApp() {
 
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
     } catch (error) {
-      updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to copy selection to clipboard')
+      updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to copy image to clipboard')
     }
   }
 
@@ -1087,6 +1106,8 @@ export function EditorApp() {
       drawHighlightLayer(context, layer)
     } else if (isShapeLayer(layer)) {
       drawShapeLayer(context, layer)
+    } else if (isTextLayer(layer)) {
+      drawTextLayer(context, layer)
     }
 
     await copyCanvasToClipboard(clipboardCanvas)
@@ -1237,6 +1258,8 @@ export function EditorApp() {
           <HighlightToolSection />
 
           <ShapeToolSection />
+
+          <TextToolSection />
 
           {documentState?.selection && selectionDraft && (
             <SelectionSection

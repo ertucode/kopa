@@ -212,6 +212,14 @@ export const {
 } = createSimpleStore(DEFAULT_EDITOR_SESSION.shapeSettings, 'ShapeSettings')
 
 export const {
+  TextSettingsStore,
+  updateTextSettingsStoreValue,
+  useTextSettingsStore,
+  useTextSettingsStoreValue,
+  getTextSettingsStoreValue,
+} = createSimpleStore(DEFAULT_EDITOR_SESSION.textSettings, 'TextSettings')
+
+export const {
   ImagePreviewDialogStore,
   updateImagePreviewDialogStoreValue,
   useImagePreviewDialogStore,

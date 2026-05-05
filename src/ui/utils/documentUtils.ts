@@ -1,5 +1,5 @@
 import { clamp, normalizeRect, Point, pointInRect, Rect } from '@common/TransformUtils'
-import { EditorDocument, EditorLayer, HighlightLayer, PixelSelection, ShapeLayer } from '../editor/types'
+import { EditorDocument, EditorLayer, HighlightLayer, PixelSelection, ShapeLayer, TextLayer } from '../editor/types'
 
 export function cloneLayer<T extends EditorLayer>(layer: T): T {
   if (layer.type === 'highlight') {
@@ -73,6 +73,10 @@ export function isHighlightLayer(layer: EditorLayer): layer is HighlightLayer {
 
 export function isShapeLayer(layer: EditorLayer): layer is ShapeLayer {
   return layer.type === 'shape'
+}
+
+export function isTextLayer(layer: EditorLayer): layer is TextLayer {
+  return layer.type === 'text'
 }
 
 export function clampSelectionToDocument(selection: PixelSelection, documentState: EditorDocument): PixelSelection {

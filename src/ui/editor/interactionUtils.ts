@@ -23,10 +23,12 @@ import {
   getMovementStepStoreValue,
   getSelectionPreviewStoreValue,
   getShapeSettingsStoreValue,
+  getTextSettingsStoreValue,
   updateInteractionStoreValue,
   updateSelectionPreviewStoreValue,
 } from './editorSimpleStores'
 import { createShapeLayer, getShapeRectFromDrag, updateShapeLayerRect } from './shapeUtils'
+import { createTextLayer } from './textUtils'
 import { EditorLayer, ImageLayer, PixelSelection, ResizeHandle } from './types'
 
 function getNormalizedMovementStepValue(): number {
@@ -169,6 +171,23 @@ export function beginShapeCreation(pointer: Point) {
     layerId: layer.id,
     start: pointer,
   })
+}
+
+export function beginTextCreation(pointer: Point) {
+  const documentState = getDocumentStateStoreValue()
+  if (!documentState) return
+
+  const layer = createTextLayer(pointer, getTextSettingsStoreValue())
+  updateDocumentStateStoreValue({
+    ...documentState,
+    layers: [...documentState.layers, layer],
+    activeLayerId: layer.id,
+    selection: null,
+  })
+  updateHistoryStoreValue(current => ({
+    past: [...current.past, { label: 'Add text', document: cloneDocument(documentState) }],
+    future: [],
+  }))
 }
 
 export function updateLayerMove(pointer: Point) {

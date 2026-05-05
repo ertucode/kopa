@@ -1,4 +1,4 @@
-export type EditorTool = 'select' | 'marquee' | 'highlight' | 'shape'
+export type EditorTool = 'select' | 'marquee' | 'highlight' | 'shape' | 'text'
 
 export type LayerBase = {
   id: string
@@ -44,7 +44,18 @@ export type ShapeLayer = LayerBase & {
   borderWidth?: number
 }
 
-export type EditorLayer = ImageLayer | HighlightLayer | ShapeLayer
+export type TextLayer = LayerBase & {
+  type: 'text'
+  text: string
+  fontFamily: string
+  fontSize: number
+  fontWeight: number
+  italic: boolean
+  underline: boolean
+  color: string
+}
+
+export type EditorLayer = ImageLayer | HighlightLayer | ShapeLayer | TextLayer
 
 export type PixelSelection = {
   x: number

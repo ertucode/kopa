@@ -7,9 +7,10 @@ type AccordionProps = {
   children: ReactNode
   defaultOpen?: boolean
   className?: string
+  detailClassName?: string
 }
 
-export function Accordion({ title, children, defaultOpen = false, className = '' }: AccordionProps) {
+export function Accordion({ title, children, defaultOpen = false, className = '', detailClassName }: AccordionProps) {
   return (
     <details open={defaultOpen} className={clsx('bg-base-200 text-base-content', className)}>
       <summary className="px-1 py-1 cursor-pointer select-none flex items-center gap-2 text-xs border-t border-base-300 bg-info/20">
@@ -17,7 +18,7 @@ export function Accordion({ title, children, defaultOpen = false, className = ''
         {title}
       </summary>
 
-      <div className="p-2 border-t border-base-300">{children}</div>
+      <div className={clsx('p-2 border-t border-base-300', detailClassName)}>{children}</div>
     </details>
   )
 }

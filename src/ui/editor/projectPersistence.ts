@@ -149,6 +149,27 @@ function serializeDocument(documentState: EditorDocument, dataUrlToAssetId: Map<
         }
       }
 
+      if (layer.type === 'text') {
+        return {
+          id: layer.id,
+          type: 'text',
+          name: layer.name,
+          visible: layer.visible,
+          opacity: layer.opacity,
+          x: layer.x,
+          y: layer.y,
+          width: layer.width,
+          height: layer.height,
+          text: layer.text,
+          fontFamily: layer.fontFamily,
+          fontSize: layer.fontSize,
+          fontWeight: layer.fontWeight,
+          italic: layer.italic,
+          underline: layer.underline,
+          color: layer.color,
+        }
+      }
+
       const assetId = dataUrlToAssetId.get(layer.dataUrl)
       if (!assetId) {
         throw new Error(`Missing project asset for layer ${layer.name}`)
@@ -201,6 +222,15 @@ function diffLayers(previousLayer: EditorProjectLayer, nextLayer: EditorProjectL
     if (previousLayer.fillColor !== nextLayer.fillColor) changes.fillColor = nextLayer.fillColor
     if (previousLayer.borderColor !== nextLayer.borderColor) changes.borderColor = nextLayer.borderColor
     if (previousLayer.borderRadius !== nextLayer.borderRadius) changes.borderRadius = nextLayer.borderRadius
+  }
+  if (previousLayer.type === 'text' && nextLayer.type === 'text') {
+    if (previousLayer.text !== nextLayer.text) changes.text = nextLayer.text
+    if (previousLayer.fontFamily !== nextLayer.fontFamily) changes.fontFamily = nextLayer.fontFamily
+    if (previousLayer.fontSize !== nextLayer.fontSize) changes.fontSize = nextLayer.fontSize
+    if (previousLayer.fontWeight !== nextLayer.fontWeight) changes.fontWeight = nextLayer.fontWeight
+    if (previousLayer.italic !== nextLayer.italic) changes.italic = nextLayer.italic
+    if (previousLayer.underline !== nextLayer.underline) changes.underline = nextLayer.underline
+    if (previousLayer.color !== nextLayer.color) changes.color = nextLayer.color
   }
 
   return changes as Extract<EditorProjectChange, { type: 'update-layer' }>['changes']
@@ -404,6 +434,27 @@ function deserializeDocument(documentState: PersistedEditorDocument, assetDataUr
           fillColor: layer.fillColor,
           borderColor: layer.borderColor,
           borderRadius: layer.borderRadius,
+        }
+      }
+
+      if (layer.type === 'text') {
+        return {
+          id: layer.id,
+          type: 'text',
+          name: layer.name,
+          visible: layer.visible,
+          opacity: layer.opacity,
+          x: layer.x,
+          y: layer.y,
+          width: layer.width,
+          height: layer.height,
+          text: layer.text,
+          fontFamily: layer.fontFamily,
+          fontSize: layer.fontSize,
+          fontWeight: layer.fontWeight,
+          italic: layer.italic,
+          underline: layer.underline,
+          color: layer.color,
         }
       }
 

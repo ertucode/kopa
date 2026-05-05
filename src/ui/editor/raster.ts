@@ -1,4 +1,5 @@
 import { EditorDocument, EditorLayer, HighlightLayer, ImageLayer, PixelSelection, ShapeLayer } from './types'
+import { drawTextLayer } from './textUtils'
 
 export async function readFileAsDataUrl(file: File): Promise<string> {
   return await new Promise((resolve, reject) => {
@@ -142,6 +143,10 @@ async function renderDocumentToCanvas(documentState: EditorDocument): Promise<HT
       drawShapeLayer(context, layer)
       continue
     }
+    if (layer.type === 'text') {
+      drawTextLayer(context, layer)
+      continue
+    }
     const image = await loadImageElement(layer.dataUrl)
     context.save()
     context.globalAlpha = layer.opacity
@@ -213,7 +218,7 @@ export async function cutSelectionFromDocument(
   const layers = await Promise.all(
     documentState.layers.map(async layer => {
       if (!layer.visible) return layer
-      if (layer.type === 'highlight' || layer.type === 'shape') return layer
+      if (layer.type === 'highlight' || layer.type === 'shape' || layer.type === 'text') return layer
       const intersection = getSelectionIntersection(selection, layer)
       if (!intersection) return layer
 

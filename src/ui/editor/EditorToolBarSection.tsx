@@ -1,4 +1,4 @@
-import { Highlighter, MousePointer2Icon, ScanLineIcon, ShapesIcon } from 'lucide-react'
+import { Highlighter, MousePointer2Icon, ScanLineIcon, ShapesIcon, TypeIcon } from 'lucide-react'
 import { cn } from '@/lib/functions/clsx'
 import { useToolStore } from './editorSimpleStores'
 import { EditorTool } from './types'
@@ -13,6 +13,7 @@ export function EditorToolBarSection(_: EditorToolBarSectionProps) {
       <Btn tool="marquee" title="Create a rectangular canvas selection" Icon={ScanLineIcon} />
       <Btn tool="highlight" title="Paint highlight objects" Icon={Highlighter} />
       <Btn tool="shape" title="Create shape objects" Icon={ShapesIcon} />
+      <Btn tool="text" title="Create text objects" Icon={TypeIcon} />
     </div>
   )
 }

@@ -50,10 +50,22 @@ const editorProjectShapeLayerSchema = editorProjectLayerBaseSchema.extend({
   borderRadius: z.number(),
 })
 
+const editorProjectTextLayerSchema = editorProjectLayerBaseSchema.extend({
+  type: z.literal('text'),
+  text: z.string(),
+  fontFamily: z.string(),
+  fontSize: z.number(),
+  fontWeight: z.number(),
+  italic: z.boolean(),
+  underline: z.boolean(),
+  color: z.string(),
+})
+
 export const editorProjectLayerSchema = z.union([
   editorProjectImageLayerSchema,
   editorProjectHighlightLayerSchema,
   editorProjectShapeLayerSchema,
+  editorProjectTextLayerSchema,
   legacyEditorProjectImageLayerSchema,
 ])
 
@@ -102,7 +114,7 @@ const editorProjectMoveLayerChangeSchema = z.object({
 })
 
 const editorProjectLayerPatchSchema = z.object({
-  type: z.enum(['image', 'highlight', 'shape']).optional(),
+  type: z.enum(['image', 'highlight', 'shape', 'text']).optional(),
   name: z.string().optional(),
   visible: z.boolean().optional(),
   opacity: z.number().optional(),
@@ -120,6 +132,12 @@ const editorProjectLayerPatchSchema = z.object({
   fillColor: z.string().optional(),
   borderColor: z.string().optional(),
   borderRadius: z.number().optional(),
+  text: z.string().optional(),
+  fontFamily: z.string().optional(),
+  fontSize: z.number().optional(),
+  fontWeight: z.number().optional(),
+  italic: z.boolean().optional(),
+  underline: z.boolean().optional(),
   points: z.array(
     z.object({
       x: z.number(),
@@ -153,7 +171,7 @@ export const editorProjectAssetSchema = z.object({
 })
 
 export const editorProjectUiStateSchema = z.object({
-  tool: z.enum(['select', 'marquee', 'highlight', 'shape']),
+  tool: z.enum(['select', 'marquee', 'highlight', 'shape', 'text']),
   canvasDraft: z.object({
     width: z.string(),
     height: z.string(),
@@ -221,6 +239,23 @@ export const editorProjectUiStateSchema = z.object({
     borderColor: '#dbeafe',
     borderRadius: 16,
     opacity: 0.8,
+  }),
+  textSettings: z.object({
+    text: z.string(),
+    fontFamily: z.string(),
+    fontSize: z.number(),
+    fontWeight: z.number(),
+    italic: z.boolean(),
+    underline: z.boolean(),
+    color: z.string(),
+  }).default({
+    text: 'Text',
+    fontFamily: 'Arial',
+    fontSize: 48,
+    fontWeight: 400,
+    italic: false,
+    underline: false,
+    color: '#ffffff',
   }),
 })
 

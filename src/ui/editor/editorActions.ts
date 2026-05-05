@@ -15,6 +15,7 @@ import {
   getProjectPathStoreValue,
   getSelectionDraftStoreValue,
   getShapeSettingsStoreValue,
+  getTextSettingsStoreValue,
   getToolStoreValue,
   updateCanvasDraftStoreValue,
   updateCustomVariablesStoreValue,
@@ -34,6 +35,7 @@ import {
   updateSelectionDraftStoreValue,
   updateSelectionPreviewStoreValue,
   updateShapeSettingsStoreValue,
+  updateTextSettingsStoreValue,
   updateToolStoreValue,
   updateIsProjectSavingStoreValue,
   updateImageRevisionStoreValue,
@@ -63,6 +65,7 @@ import { EditorDocument, EditorTool } from './types'
 import { HighlightSettingsState } from './highlightUtils'
 import { ShapeSettingsState } from './shapeUtils'
 import { imageCache } from './editorImageCache'
+import { TextSettingsState } from './textUtils'
 
 type ApplyProjectStateArgs = {
   nextProjectPath: string | null
@@ -80,6 +83,7 @@ type ApplyProjectStateArgs = {
   nextVariables: CustomVariableDraft[]
   nextHighlightSettings: HighlightSettingsState
   nextShapeSettings: ShapeSettingsState
+  nextTextSettings: TextSettingsState
 }
 
 function applyProjectState(args: ApplyProjectStateArgs) {
@@ -96,6 +100,7 @@ function applyProjectState(args: ApplyProjectStateArgs) {
   updateCustomVariablesStoreValue(args.nextVariables)
   updateHighlightSettingsStoreValue(args.nextHighlightSettings)
   updateShapeSettingsStoreValue(args.nextShapeSettings)
+  updateTextSettingsStoreValue(args.nextTextSettings)
   pendingDraftSyncRef.current = {
     layerPosition: args.nextLayerPositionDraft,
     layerSize: args.nextLayerSizeDraft,
@@ -135,6 +140,7 @@ async function loadProjectIntoEditor(args: { projectPath: string; project: Param
     nextVariables: loadedProject.ui.variables,
     nextHighlightSettings: loadedProject.ui.highlightSettings,
     nextShapeSettings: loadedProject.ui.shapeSettings,
+    nextTextSettings: loadedProject.ui.textSettings,
   })
 }
 
@@ -182,6 +188,7 @@ export function getProjectToSerialize(): Parameters<typeof serializeProject>[0] 
       variables: getCustomVariablesStoreValue(),
       highlightSettings: getHighlightSettingsStoreValue(),
       shapeSettings: getShapeSettingsStoreValue(),
+      textSettings: getTextSettingsStoreValue(),
     },
   }
 }
@@ -284,6 +291,7 @@ export function startNewProject(width: number, height: number) {
     nextVariables: DEFAULT_EDITOR_SESSION.variables,
     nextHighlightSettings: DEFAULT_EDITOR_SESSION.highlightSettings,
     nextShapeSettings: DEFAULT_EDITOR_SESSION.shapeSettings,
+    nextTextSettings: DEFAULT_EDITOR_SESSION.textSettings,
   })
   updateHasUnsavedChangesStoreValue(true)
 }

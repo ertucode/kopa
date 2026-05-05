@@ -1,4 +1,5 @@
 import { Accordion } from '@/lib/components/accordion'
+import { CheckboxesWrapper, CheckboxField } from '@/lib/components/checkbox-field'
 import { Input } from '@/lib/components/input'
 import { InputColor } from '@/lib/components/input-color'
 import { InputRange } from '@/lib/components/input-range'
@@ -13,6 +14,7 @@ import {
   isHighlightLayer,
   isImageLayer,
   isShapeLayer,
+  isTextLayer,
   updateLayer,
 } from '../utils/documentUtils'
 import { useDocumentStateStore, useHistoryStore } from './editorCoreStores'
@@ -21,6 +23,7 @@ import {
   useActiveLayerExpressionVariablesValue,
   useActiveLayerValue,
   useActiveShapeValue,
+  useActiveTextValue,
   useNormalizedMovementStepValue,
 } from './editorDerivedValues'
 import { pendingDraftSyncRef } from './editorDraftSyncState'
@@ -28,7 +31,9 @@ import { useLayerPositionDraftStore, useLayerSizeDraftStore, updateErrorMessageS
 import { FormWithInlineApply } from './form/FormWithInlineApply'
 import { clampHighlightBrushSize, clampHighlightOpacity, updateHighlightLayerStyle } from './highlightUtils'
 import { clampShapeOpacity, updateShapeLayerStyle } from './shapeUtils'
-import { EditorDocument, HighlightBrushShape, HighlightLayer, ShapeLayer, ShapeType } from './types'
+import { clampTextFontSize, clampTextFontWeight, updateTextLayerStyle } from './textUtils'
+import { useAvailableFontFamilies } from './useAvailableFontFamilies'
+import { EditorDocument, HighlightBrushShape, HighlightLayer, ShapeLayer, ShapeType, TextLayer } from './types'
 
 function formatPixels(value: number): string {
   return `${Math.round(value)}`
@@ -40,10 +45,12 @@ export function ActiveLayerInspectorSection() {
   const activeLayer = useActiveLayerValue()
   const activeHighlight = useActiveHighlightValue()
   const activeShape = useActiveShapeValue()
+  const activeText = useActiveTextValue()
   const activeLayerExpressionVariables = useActiveLayerExpressionVariablesValue()
   const normalizedMovementStep = useNormalizedMovementStepValue()
   const [layerPositionDraft, setLayerPositionDraft] = useLayerPositionDraftStore()
   const [layerSizeDraft, setLayerSizeDraft] = useLayerSizeDraftStore()
+  const availableFonts = useAvailableFontFamilies(activeText?.fontFamily)
 
   if (!activeLayer || !documentState) return null
 
@@ -102,7 +109,7 @@ export function ActiveLayerInspectorSection() {
 
   function applyInspectorSize() {
     if (!layerSizeDraft || layerSizeDraft.layerId !== currentActiveLayer.id) return
-    if (isHighlightLayer(currentActiveLayer)) return
+    if (isHighlightLayer(currentActiveLayer) || isTextLayer(currentActiveLayer)) return
 
     let width = Math.max(
       1,
@@ -166,6 +173,20 @@ export function ActiveLayerInspectorSection() {
     pushHistory('Update shape', currentDocument, nextDocument)
   }
 
+  function applyActiveTextStyle(
+    changes: Partial<
+      Pick<TextLayer, 'text' | 'fontFamily' | 'fontSize' | 'fontWeight' | 'italic' | 'underline' | 'color'>
+    >
+  ) {
+    if (!activeText) return
+    const nextDocument = updateLayer(currentDocument, activeText.id, layer => {
+      if (!isTextLayer(layer)) return layer
+      return updateTextLayerStyle(layer, changes)
+    })
+    if (documentsEqual(currentDocument, nextDocument)) return
+    pushHistory('Update text', currentDocument, nextDocument)
+  }
+
   return (
     <section>
       <Accordion title={`Active - ${currentActiveLayer.name}`} defaultOpen>
@@ -198,6 +219,7 @@ export function ActiveLayerInspectorSection() {
             </FormWithInlineApply>
           )}
           {!isHighlightLayer(currentActiveLayer) &&
+            !isTextLayer(currentActiveLayer) &&
             layerSizeDraft &&
             layerSizeDraft.layerId === currentActiveLayer.id && (
               <FormWithInlineApply label="Exact Size" onSubmit={applyInspectorSize} disabled={isInspectorSizeUnchanged}>
@@ -307,6 +329,66 @@ export function ActiveLayerInspectorSection() {
                   value={activeShape.opacity}
                   onChange={value => applyActiveShapeStyle({ opacity: clampShapeOpacity(Number(value)) })}
                 />
+              </OneInputOneLine>
+            </>
+          )}
+          {activeText && (
+            <>
+              <OneInputOneLine label="Text">
+                <textarea
+                  className="textarea textarea-xs min-h-24 flex-1 rounded-none focus:outline-1 outline-offset-0"
+                  value={activeText.text}
+                  onChange={event => applyActiveTextStyle({ text: event.target.value })}
+                />
+              </OneInputOneLine>
+              <OneInputOneLine label="Font">
+                <Select
+                  options={availableFonts.map(font => ({ label: font, value: font }))}
+                  value={activeText.fontFamily}
+                  onChange={value => applyActiveTextStyle({ fontFamily: value })}
+                  searchable
+                />
+              </OneInputOneLine>
+              <OneInputOneLine label="Size">
+                <Input
+                  type="number"
+                  min={1}
+                  max={512}
+                  value={activeText.fontSize}
+                  onChange={value =>
+                    applyActiveTextStyle({ fontSize: clampTextFontSize(Number(value) || activeText.fontSize) })
+                  }
+                />
+              </OneInputOneLine>
+              <OneInputOneLine label="Weight">
+                <Select
+                  options={[
+                    { label: 'Regular', value: '400' },
+                    { label: 'Medium', value: '500' },
+                    { label: 'Semibold', value: '600' },
+                    { label: 'Bold', value: '700' },
+                    { label: 'Black', value: '900' },
+                  ]}
+                  value={String(activeText.fontWeight)}
+                  onChange={value => applyActiveTextStyle({ fontWeight: clampTextFontWeight(Number(value) || 400) })}
+                />
+              </OneInputOneLine>
+              <OneInputOneLine label="Color">
+                <InputColor value={activeText.color} onChange={value => applyActiveTextStyle({ color: value })} />
+              </OneInputOneLine>
+              <OneInputOneLine label="Style">
+                <CheckboxesWrapper>
+                  <CheckboxField
+                    label="Italic"
+                    checked={activeText.italic}
+                    onChange={checked => applyActiveTextStyle({ italic: checked })}
+                  />
+                  <CheckboxField
+                    label="Underline"
+                    checked={activeText.underline}
+                    onChange={checked => applyActiveTextStyle({ underline: checked })}
+                  />
+                </CheckboxesWrapper>
               </OneInputOneLine>
             </>
           )}
