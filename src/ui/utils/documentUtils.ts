@@ -24,10 +24,11 @@ export function documentsEqual(left: EditorDocument | null, right: EditorDocumen
   return JSON.stringify(left) === JSON.stringify(right)
 }
 
-export function createDocument(width: number, height: number): EditorDocument {
+export function createDocument(width: number, height: number, background = 'transparent'): EditorDocument {
   return {
     width,
     height,
+    background,
     pasteWidth: null,
     pasteHeight: null,
     layers: [],

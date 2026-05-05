@@ -7,6 +7,7 @@ import { EditorTool } from './types'
 export type CanvasDraftState = {
   width: string
   height: string
+  background: string
 }
 
 export type PasteSizeDraftState = {
@@ -57,7 +58,7 @@ export type EditorSessionState = {
 
 export const DEFAULT_EDITOR_SESSION: EditorSessionState = {
   tool: 'select',
-  canvasDraft: { width: '1024', height: '1024' },
+  canvasDraft: { width: '1024', height: '1024', background: 'transparent' },
   movementStep: '1',
   movementStepDraft: '1',
   pasteSizeDraft: { width: '', height: '' },

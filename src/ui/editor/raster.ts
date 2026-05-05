@@ -133,6 +133,9 @@ async function renderDocumentToCanvas(documentState: EditorDocument): Promise<HT
     throw new Error('Could not create document canvas')
   }
 
+  context.fillStyle = documentState.background
+  context.fillRect(0, 0, documentState.width, documentState.height)
+
   for (const layer of documentState.layers) {
     if (!layer.visible) continue
     if (layer.type === 'highlight') {

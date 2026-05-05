@@ -108,6 +108,7 @@ function serializeDocument(documentState: EditorDocument, dataUrlToAssetId: Map<
   return {
     width: documentState.width,
     height: documentState.height,
+    background: documentState.background,
     pasteWidth: documentState.pasteWidth,
     pasteHeight: documentState.pasteHeight,
     activeLayerId: documentState.activeLayerId,
@@ -244,6 +245,7 @@ function diffDocuments(previousDocument: PersistedEditorDocument, nextDocument: 
 
   if (previousDocument.width !== nextDocument.width) documentPropChanges.width = nextDocument.width
   if (previousDocument.height !== nextDocument.height) documentPropChanges.height = nextDocument.height
+  if (previousDocument.background !== nextDocument.background) documentPropChanges.background = nextDocument.background
   if (previousDocument.pasteWidth !== nextDocument.pasteWidth) documentPropChanges.pasteWidth = nextDocument.pasteWidth
   if (previousDocument.pasteHeight !== nextDocument.pasteHeight) documentPropChanges.pasteHeight = nextDocument.pasteHeight
   if (previousDocument.activeLayerId !== nextDocument.activeLayerId) documentPropChanges.activeLayerId = nextDocument.activeLayerId
@@ -324,6 +326,7 @@ function applyOperation(documentState: PersistedEditorDocument, operation: Edito
         ...nextDocument,
         width: change.width ?? nextDocument.width,
         height: change.height ?? nextDocument.height,
+        background: change.background ?? nextDocument.background,
         pasteWidth: change.pasteWidth !== undefined ? change.pasteWidth : nextDocument.pasteWidth,
         pasteHeight: change.pasteHeight !== undefined ? change.pasteHeight : nextDocument.pasteHeight,
         activeLayerId: change.activeLayerId !== undefined ? change.activeLayerId : nextDocument.activeLayerId,
@@ -396,6 +399,7 @@ function deserializeDocument(documentState: PersistedEditorDocument, assetDataUr
   return {
     width: documentState.width,
     height: documentState.height,
+    background: documentState.background,
     pasteWidth: documentState.pasteWidth,
     pasteHeight: documentState.pasteHeight,
     activeLayerId: documentState.activeLayerId,

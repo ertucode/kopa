@@ -79,6 +79,7 @@ export const editorProjectSelectionSchema = z.object({
 export const editorProjectDocumentSchema = z.object({
   width: z.number(),
   height: z.number(),
+  background: z.string().default('transparent'),
   pasteWidth: z.number().nullable(),
   pasteHeight: z.number().nullable(),
   layers: z.array(editorProjectLayerSchema),
@@ -90,6 +91,7 @@ const editorProjectDocumentPropsChangeSchema = z.object({
   type: z.literal('set-document-props'),
   width: z.number().optional(),
   height: z.number().optional(),
+  background: z.string().optional(),
   pasteWidth: z.number().nullable().optional(),
   pasteHeight: z.number().nullable().optional(),
   activeLayerId: z.string().nullable().optional(),
@@ -175,6 +177,7 @@ export const editorProjectUiStateSchema = z.object({
   canvasDraft: z.object({
     width: z.string(),
     height: z.string(),
+    background: z.string().default('transparent'),
   }),
   movementStep: z.string(),
   movementStepDraft: z.string().default('1'),

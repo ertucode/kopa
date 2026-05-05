@@ -272,16 +272,20 @@ export async function handleOpenRecentProject(nextProjectPath: string) {
   await openProjectFromPath(nextProjectPath)
 }
 
-export function startNewProject(width: number, height: number) {
+export function startNewProject(width: number, height: number, background = DEFAULT_EDITOR_SESSION.canvasDraft.background) {
   if (!confirmDiscardUnsavedChanges()) return
 
   applyProjectState({
     nextProjectPath: null,
     nextProjectName: 'Untitled Project',
-    nextDocumentState: createDocument(width, height),
+    nextDocumentState: createDocument(width, height, background),
     nextHistory: { past: [], future: [] },
     nextTool: DEFAULT_EDITOR_SESSION.tool,
-    nextCanvasDraft: { width: String(width), height: String(height) },
+    nextCanvasDraft: {
+      width: String(width),
+      height: String(height),
+      background,
+    },
     nextMovementStep: DEFAULT_EDITOR_SESSION.movementStep,
     nextMovementStepDraft: DEFAULT_EDITOR_SESSION.movementStepDraft,
     nextPasteSizeDraft: DEFAULT_EDITOR_SESSION.pasteSizeDraft,
@@ -331,16 +335,16 @@ export function setCommittedDocument(documentValue: EditorDocument, label: strin
   })
 }
 
-export function createNewDocument(width: number, height: number) {
-  startNewProject(width, height)
+export function createNewDocument(width: number, height: number, background = DEFAULT_EDITOR_SESSION.canvasDraft.background) {
+  startNewProject(width, height, background)
 }
 
-export function setCanvasSize(width: number, height: number) {
+export function setCanvasSize(width: number, height: number, background: string) {
   const documentState = getDocumentStateStoreValue()
   if (!documentState) {
-    createNewDocument(width, height)
+    createNewDocument(width, height, background)
     return
   }
 
-  setCommittedDocument({ ...cloneDocument(documentState), width, height }, 'Resize canvas')
+  setCommittedDocument({ ...cloneDocument(documentState), width, height, background }, 'Update canvas')
 }

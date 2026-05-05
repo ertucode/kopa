@@ -67,6 +67,7 @@ export type PixelSelection = {
 export type EditorDocument = {
   width: number
   height: number
+  background: string
   pasteWidth: number | null
   pasteHeight: number | null
   layers: EditorLayer[]

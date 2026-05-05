@@ -40,6 +40,7 @@ import {
   updateShapeCreation,
 } from './interactionUtils'
 import {
+  useCanvasDraftStore,
   useLayerPositionDraftStore,
   useLayerSizeDraftStore,
   usePasteSizeDraftStore,
@@ -54,7 +55,6 @@ import {
   updateMovementStepStoreValue,
   getToolStoreValue,
   useToolStoreValue,
-  useCanvasDraftStoreValue,
   useCustomVariablesStoreValue,
   getMovementStepDraftStoreValue,
   getIsSavingStoreValue,
@@ -116,7 +116,7 @@ export function EditorApp() {
   const [documentState, setDocumentState] = useDocumentStateStore()
   const tool = useToolStoreValue()
   const selectionPreview = useSelectionPreviewStoreValue()
-  const canvasDraft = useCanvasDraftStoreValue()
+  const [canvasDraft, setCanvasDraft] = useCanvasDraftStore()
   const [pasteSizeDraft, setPasteSizeDraft] = usePasteSizeDraftStore()
   const [movementStep, setMovementStep] = useMovementStepStore()
   const customVariables = useCustomVariablesStoreValue()
@@ -440,6 +440,17 @@ export function EditorApp() {
     )
   }, [documentState, viewportBounds.height, viewportBounds.width])
 
+  const transparentCanvasStyle =
+    documentState?.background === 'transparent'
+      ? {
+          backgroundColor: '#ffffff',
+          backgroundImage:
+            'linear-gradient(45deg, rgba(17,20,27,0.15) 25%, transparent 25%), linear-gradient(-45deg, rgba(17,20,27,0.15) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(17,20,27,0.15) 75%), linear-gradient(-45deg, transparent 75%, rgba(17,20,27,0.15) 75%)',
+          backgroundPosition: '0 0, 0 20px, 20px -20px, -20px 0px',
+          backgroundSize: '40px 40px',
+        }
+      : null
+
   useEffect(() => {
     if (!documentState) return
     let cancelled = false
@@ -486,7 +497,7 @@ export function EditorApp() {
     if (!mainContext || !overlayContext) return
 
     mainContext.clearRect(0, 0, documentState.width, documentState.height)
-    mainContext.fillStyle = '#11141b'
+    mainContext.fillStyle = documentState.background
     mainContext.fillRect(0, 0, documentState.width, documentState.height)
 
     for (const layer of documentState.layers) {
@@ -1198,7 +1209,28 @@ export function EditorApp() {
       updateErrorMessageStoreValue('Canvas size must be valid numbers or simple math expressions')
       return
     }
-    setCanvasSize(width, height)
+    setCanvasSize(width, height, canvasDraft.background)
+  }
+
+  function setTransparentCanvasBackground() {
+    setCanvasDraft(current => ({ ...current, background: 'transparent' }))
+
+    if (documentState) {
+      setCanvasSize(documentState.width, documentState.height, 'transparent')
+      return
+    }
+
+    const width = Math.max(1, parseRoundedMathExpression(canvasDraft.width, resolvedExpressionVariables) ?? Number.NaN)
+    const height = Math.max(
+      1,
+      parseRoundedMathExpression(canvasDraft.height, resolvedExpressionVariables) ?? Number.NaN
+    )
+    if (!Number.isFinite(width) || !Number.isFinite(height)) {
+      updateErrorMessageStoreValue('Canvas size must be valid numbers or simple math expressions')
+      return
+    }
+
+    setCanvasSize(width, height, 'transparent')
   }
 
   const layerMenu = useContextMenu<CanvasContextMenuItem>()
@@ -1319,7 +1351,11 @@ export function EditorApp() {
                   <canvas
                     ref={mainCanvasRef}
                     className="block"
-                    style={{ width: documentState.width * viewportScale, height: documentState.height * viewportScale }}
+                    style={{
+                      width: documentState.width * viewportScale,
+                      height: documentState.height * viewportScale,
+                      ...(transparentCanvasStyle ?? {}),
+                    }}
                   />
                   <canvas
                     ref={overlayCanvasRef}
@@ -1354,6 +1390,7 @@ export function EditorApp() {
                       documentState.width &&
                     parseRoundedMathExpression(canvasDraft.height, resolvedExpressionVariables) === documentState.height
                   }
+                  isCanvasColorUnchanged={canvasDraft.background === documentState.background}
                   isPasteSizeUnchanged={
                     (pasteSizeDraft.width.trim().length
                       ? Math.max(
@@ -1370,6 +1407,7 @@ export function EditorApp() {
                   }
                   isMovementStepUnchanged={movementStep === String(normalizedMovementStepDraft)}
                   onApplyCanvasDraft={applyCanvasDraft}
+                  onSetTransparentBackground={setTransparentCanvasBackground}
                   onApplyPasteSize={() => applyPasteSize(pasteSizeDraft.width, pasteSizeDraft.height)}
                   onApplyMovementStep={applyMovementStep}
                 />

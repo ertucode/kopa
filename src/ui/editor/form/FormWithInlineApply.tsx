@@ -5,7 +5,7 @@ import React, { ButtonHTMLAttributes, ReactNode } from 'react'
 
 export type FormWithInlineApplyProps = {
   onSubmit: () => void
-  label: string | undefined
+  label: ReactNode
   children: ReactNode
   disabled?: boolean
 }
@@ -20,7 +20,7 @@ export function FormWithInlineApply({ onSubmit, label, children, disabled }: For
       }}
     >
       <div className="grid grid-cols-[auto_1fr] items-center">
-        {label && <Label className="text-clip">{label}</Label>}
+        {label && <Label className="flex items-center justify-between gap-1 overflow-visible whitespace-normal">{label}</Label>}
         <div className="flex w-full">
           {children}
           <InlineButton type="submit" disabled={disabled} Icon={SaveIcon} />
