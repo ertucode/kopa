@@ -3,17 +3,15 @@ import useMeasure from 'react-use-measure'
 import { ContextMenu, ContextMenuList, useContextMenu } from '@/lib/components/context-menu'
 import { useShortcuts } from '@/lib/hooks/useShortcuts'
 import { getWindowElectron, windowArgs } from '@/getWindowElectron'
-import { Point, pointInRect, Rect, snapToStep } from '@common/TransformUtils'
+import { pointInRect, snapToStep } from '@common/TransformUtils'
 import { createLayerFromFile, loadImageElement } from './raster'
-import { deserializeProject, serializeProject } from './projectPersistence'
-import { EditorDocument, EditorTool, ImageLayer, ResizeHandle } from './types'
-import { drawShapeLayer, ShapeSettingsState } from './shapeUtils'
-import { drawHighlightLayer, HighlightSettingsState } from './highlightUtils'
-import { CustomVariableDraft, parseRoundedMathExpression, resolveCustomVariables } from '../utils/customVariableUtils'
+import { EditorDocument } from './types'
+import { drawShapeLayer } from './shapeUtils'
+import { drawHighlightLayer } from './highlightUtils'
+import { parseRoundedMathExpression, resolveCustomVariables } from '../utils/customVariableUtils'
 import {
   clampSelectionToDocument,
   cloneDocument,
-  createDocument,
   getLayerRect,
   hitLayer,
   isHighlightLayer,
@@ -38,69 +36,30 @@ import {
   updateShapeCreation,
 } from './interactionUtils'
 import {
-  CanvasDraftState,
-  DEFAULT_EDITOR_SESSION,
-  LayerPositionDraftState,
-  LayerSizeDraftState,
-  PasteSizeDraftState,
-  SelectionDraftState,
-} from './editorSession'
-import {
   useLayerPositionDraftStore,
   useLayerSizeDraftStore,
   usePasteSizeDraftStore,
   useSelectionDraftStore,
   updateImagePreviewDialogStoreValue,
   useMovementStepStore,
-  updateShapeSettingsStoreValue,
-  updateHighlightSettingsStoreValue,
-  getShapeSettingsStoreValue,
-  getHighlightSettingsStoreValue,
   updateErrorMessageStoreValue,
   updateInteractionStoreValue,
   updateSelectionPreviewStoreValue,
-  useInteractionStoreValue,
-  useProjectPathStore,
-  useProjectNameStore,
   useSelectionPreviewStoreValue,
   useImageRevisionStore,
-  updateProjectPathStoreValue,
-  updateProjectNameStoreValue,
-  updateCanvasDraftStoreValue,
-  updateCustomVariablesStoreValue,
-  updateMovementStepDraftStoreValue,
   updateMovementStepStoreValue,
-  updateProjectNameDraftStoreValue,
-  updateToolStoreValue,
-  updateLayerPositionDraftStoreValue,
-  updateLayerSizeDraftStoreValue,
-  updatePasteSizeDraftStoreValue,
-  updateSelectionDraftStoreValue,
   getToolStoreValue,
   useToolStoreValue,
   useCanvasDraftStoreValue,
   useCustomVariablesStoreValue,
-  getProjectNameStoreValue,
   getMovementStepDraftStoreValue,
   getIsSavingStoreValue,
   updateIsSavingStoreValue,
-  updateRecentProjectsStoreValue,
   updateImageRevisionStoreValue,
-  updateIsProjectSavingStoreValue,
-  getCanvasDraftStoreValue,
-  getMovementStepStoreValue,
-  getPasteSizeDraftStoreValue,
-  getLayerPositionDraftStoreValue,
-  getLayerSizeDraftStoreValue,
-  getSelectionDraftStoreValue,
-  getCustomVariablesStoreValue,
   getInteractionStoreValue,
 } from './editorSimpleStores'
 import {
-  EditorHistoryState,
   getDocumentStateStoreValue,
-  getHistoryStoreValue,
-  updateDocumentStateStoreValue,
   updateHistoryStoreValue,
   useDocumentStateStore,
 } from './editorCoreStores'
@@ -113,11 +72,6 @@ import {
   useSelectionExpressionVariablesValue,
 } from './editorDerivedValues'
 import { pendingDraftSyncRef } from './editorDraftSyncState'
-import {
-  getHasUnsavedChangesStoreValue,
-  isHydratingProjectRef,
-  updateHasUnsavedChangesStoreValue,
-} from './editorPersistenceState'
 import { ShapeToolSection } from './ShapeToolSection'
 import { EditorAutoSaveEffect } from './EditorAutoSaveEffect'
 import { HighlightToolSection } from './HighlightToolSection'
@@ -133,6 +87,20 @@ import { EmptyProjectState } from './EmptyProjectState'
 import { ObjectsListSection } from './ObjectsListSection'
 import { ProjectSection } from './ProjectSection'
 import { VariablesSection } from './VariablesSection'
+import { findHandle, getHandles, getPointerOnCanvas } from './editorCanvasUtils'
+import { imageCache } from './editorImageCache'
+import {
+  applyProjectName,
+  createNewDocument,
+  handleOpenProject,
+  handleOpenRecentProject,
+  handleSaveProject,
+  openProjectFromPath,
+  pushHistory,
+  refreshRecentProjects,
+  saveProjectToPath,
+  setCanvasSize,
+} from './editorActions'
 
 type CanvasContextMenuItem =
   | {
@@ -143,169 +111,6 @@ type CanvasContextMenuItem =
       type: 'selection'
       layerId: string | null
     }
-
-function getHandles(layer: ImageLayer): Array<{ handle: ResizeHandle; rect: Rect }> {
-  const size = 12
-  const half = size / 2
-  const points: Record<ResizeHandle, Point> = {
-    n: { x: layer.x + layer.width / 2, y: layer.y },
-    ne: { x: layer.x + layer.width, y: layer.y },
-    e: { x: layer.x + layer.width, y: layer.y + layer.height / 2 },
-    se: { x: layer.x + layer.width, y: layer.y + layer.height },
-    s: { x: layer.x + layer.width / 2, y: layer.y + layer.height },
-    sw: { x: layer.x, y: layer.y + layer.height },
-    w: { x: layer.x, y: layer.y + layer.height / 2 },
-    nw: { x: layer.x, y: layer.y },
-  }
-
-  return (Object.entries(points) as [ResizeHandle, Point][]).map(([handle, point]) => ({
-    handle,
-    rect: { x: point.x - half, y: point.y - half, width: size, height: size },
-  }))
-}
-
-function getPointerOnCanvas(event: React.PointerEvent<HTMLCanvasElement>, canvas: HTMLCanvasElement): Point {
-  const rect = canvas.getBoundingClientRect()
-  const scaleX = canvas.width / rect.width
-  const scaleY = canvas.height / rect.height
-  return {
-    x: (event.clientX - rect.left) * scaleX,
-    y: (event.clientY - rect.top) * scaleY,
-  }
-}
-
-function applyProjectState(args: {
-  nextProjectPath: string | null
-  nextProjectName: string
-  nextDocumentState: EditorDocument | null
-  nextHistory: EditorHistoryState
-  nextTool: EditorTool
-  nextCanvasDraft: CanvasDraftState
-  nextMovementStep: string
-  nextMovementStepDraft: string
-  nextPasteSizeDraft: PasteSizeDraftState
-  nextLayerPositionDraft: LayerPositionDraftState | null
-  nextLayerSizeDraft: LayerSizeDraftState | null
-  nextSelectionDraft: SelectionDraftState | null
-  nextVariables: CustomVariableDraft[]
-  nextHighlightSettings: HighlightSettingsState
-  nextShapeSettings: ShapeSettingsState
-}) {
-  isHydratingProjectRef.current = true
-  updateProjectPathStoreValue(args.nextProjectPath)
-  updateProjectNameStoreValue(args.nextProjectName)
-  updateProjectNameDraftStoreValue({ value: args.nextProjectName })
-  updateDocumentStateStoreValue(args.nextDocumentState)
-  updateHistoryStoreValue(args.nextHistory)
-  updateToolStoreValue(args.nextTool)
-  updateCanvasDraftStoreValue(args.nextCanvasDraft)
-  updateMovementStepStoreValue(args.nextMovementStep)
-  updateMovementStepDraftStoreValue(args.nextMovementStepDraft)
-  updateCustomVariablesStoreValue(args.nextVariables)
-  updateHighlightSettingsStoreValue(args.nextHighlightSettings)
-  updateShapeSettingsStoreValue(args.nextShapeSettings)
-  pendingDraftSyncRef.current = {
-    layerPosition: args.nextLayerPositionDraft,
-    layerSize: args.nextLayerSizeDraft,
-    selection: args.nextSelectionDraft,
-    pasteSize: args.nextPasteSizeDraft,
-  }
-  updateInteractionStoreValue(null)
-  updateSelectionPreviewStoreValue(null)
-  updateImagePreviewDialogStoreValue(null)
-  updateLayerPositionDraftStoreValue(args.nextLayerPositionDraft)
-  updateLayerSizeDraftStoreValue(args.nextLayerSizeDraft)
-  updateSelectionDraftStoreValue(args.nextSelectionDraft)
-  updatePasteSizeDraftStoreValue(args.nextPasteSizeDraft)
-  updateHasUnsavedChangesStoreValue(false)
-}
-
-async function refreshRecentProjects() {
-  try {
-    updateRecentProjectsStoreValue(await getWindowElectron().getRecentEditorProjects())
-  } catch (error) {
-    updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to load recent projects')
-  }
-}
-function confirmDiscardUnsavedChanges() {
-  if (!getHasUnsavedChangesStoreValue()) return true
-  return window.confirm('You have unsaved editor changes. Continue and discard them?')
-}
-async function openProjectFromPath(nextProjectPath: string, providedName?: string) {
-  try {
-    const response = await getWindowElectron().loadEditorProject({ projectPath: nextProjectPath })
-    const loadedProject = await deserializeProject(response.project, assetId =>
-      getWindowElectron().loadEditorProjectAsset({ projectPath: response.projectPath, assetId })
-    )
-
-    imageCache.clear()
-    updateImageRevisionStoreValue(revision => revision + 1)
-    applyProjectState({
-      nextProjectPath: response.projectPath,
-      nextProjectName: providedName ?? response.project.name,
-      nextDocumentState: loadedProject.documentState,
-      nextHistory: loadedProject.history,
-      nextTool: loadedProject.ui.tool,
-      nextCanvasDraft: loadedProject.ui.canvasDraft,
-      nextMovementStep: loadedProject.ui.movementStep,
-      nextMovementStepDraft: loadedProject.ui.movementStepDraft,
-      nextPasteSizeDraft: loadedProject.ui.pasteSizeDraft,
-      nextLayerPositionDraft: loadedProject.ui.layerPositionDraft,
-      nextLayerSizeDraft: loadedProject.ui.layerSizeDraft,
-      nextSelectionDraft: loadedProject.ui.selectionDraft,
-      nextVariables: loadedProject.ui.variables,
-      nextHighlightSettings: loadedProject.ui.highlightSettings,
-      nextShapeSettings: loadedProject.ui.shapeSettings,
-    })
-    await refreshRecentProjects()
-  } catch (error) {
-    updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to open editor project')
-  }
-}
-const imageCache = new Map<string, HTMLImageElement>()
-
-async function saveProjectToPath(nextProjectPath: string) {
-  updateIsProjectSavingStoreValue(true)
-
-  try {
-    const serializedProject = await serializeProject(getProjectToSerialize())
-
-    await getWindowElectron().saveEditorProject({
-      projectPath: nextProjectPath,
-      request: serializedProject.request,
-    })
-
-    updateProjectPathStoreValue(nextProjectPath)
-    updateProjectNameStoreValue(serializedProject.request.project.name)
-    updateHasUnsavedChangesStoreValue(false)
-    await refreshRecentProjects()
-  } catch (error) {
-    updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to save editor project')
-  } finally {
-    updateIsProjectSavingStoreValue(false)
-  }
-}
-
-function getProjectToSerialize(): Parameters<typeof serializeProject>[0] {
-  return {
-    name: getProjectNameStoreValue(),
-    documentState: getDocumentStateStoreValue(),
-    history: getHistoryStoreValue(),
-    ui: {
-      tool: getToolStoreValue(),
-      canvasDraft: getCanvasDraftStoreValue(),
-      movementStep: getMovementStepStoreValue(),
-      movementStepDraft: getMovementStepDraftStoreValue(),
-      pasteSizeDraft: getPasteSizeDraftStoreValue(),
-      layerPositionDraft: getLayerPositionDraftStoreValue(),
-      layerSizeDraft: getLayerSizeDraftStoreValue(),
-      selectionDraft: getSelectionDraftStoreValue(),
-      variables: getCustomVariablesStoreValue(),
-      highlightSettings: getHighlightSettingsStoreValue(),
-      shapeSettings: getShapeSettingsStoreValue(),
-    },
-  }
-}
 
 export function EditorApp() {
   const [documentState, setDocumentState] = useDocumentStateStore()
@@ -318,8 +123,6 @@ export function EditorApp() {
   const [layerPositionDraft, setLayerPositionDraft] = useLayerPositionDraftStore()
   const [layerSizeDraft, setLayerSizeDraft] = useLayerSizeDraftStore()
   const [selectionDraft, setSelectionDraft] = useSelectionDraftStore()
-  const [projectPath, setProjectPath] = useProjectPathStore()
-  const [projectName, setProjectName] = useProjectNameStore()
   const [viewportRef, viewportBounds] = useMeasure()
   const mainCanvasRef = useRef<HTMLCanvasElement>(null)
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -329,114 +132,6 @@ export function EditorApp() {
   const resolvedCustomVariables = useResolvedCustomVariablesValue()
   const resolvedExpressionVariables = useResolvedExpressionVariablesValue()
   const selectionExpressionVariables = useSelectionExpressionVariablesValue()
-
-  async function handleSaveProjectAs() {
-    updateIsProjectSavingStoreValue(true)
-
-    try {
-      const serializedProject = await serializeProject(getProjectToSerialize())
-
-      const response = await getWindowElectron().saveEditorProjectAs({
-        request: serializedProject.request,
-        defaultName: projectName,
-      })
-
-      if (!response.canceled && response.projectPath) {
-        setProjectPath(response.projectPath)
-        setProjectName(serializedProject.request.project.name)
-        updateHasUnsavedChangesStoreValue(false)
-        await refreshRecentProjects()
-      }
-    } catch (error) {
-      updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to save editor project')
-    } finally {
-      updateIsProjectSavingStoreValue(false)
-    }
-  }
-
-  async function handleSaveProject() {
-    if (projectPath) {
-      await saveProjectToPath(projectPath)
-      return
-    }
-
-    await handleSaveProjectAs()
-  }
-
-  async function handleOpenProject() {
-    if (!confirmDiscardUnsavedChanges()) return
-
-    try {
-      const response = await getWindowElectron().openEditorProject()
-      if (response.canceled || !response.projectPath || !response.project) return
-      const nextProjectPath = response.projectPath
-      const loadedProject = await deserializeProject(response.project, assetId =>
-        getWindowElectron().loadEditorProjectAsset({ projectPath: nextProjectPath, assetId })
-      )
-
-      imageCache.clear()
-      updateImageRevisionStoreValue(revision => revision + 1)
-      applyProjectState({
-        nextProjectPath,
-        nextProjectName: response.project.name,
-        nextDocumentState: loadedProject.documentState,
-        nextHistory: loadedProject.history,
-        nextTool: loadedProject.ui.tool,
-        nextCanvasDraft: loadedProject.ui.canvasDraft,
-        nextMovementStep: loadedProject.ui.movementStep,
-        nextMovementStepDraft: loadedProject.ui.movementStepDraft,
-        nextPasteSizeDraft: loadedProject.ui.pasteSizeDraft,
-        nextLayerPositionDraft: loadedProject.ui.layerPositionDraft,
-        nextLayerSizeDraft: loadedProject.ui.layerSizeDraft,
-        nextSelectionDraft: loadedProject.ui.selectionDraft,
-        nextVariables: loadedProject.ui.variables,
-        nextHighlightSettings: loadedProject.ui.highlightSettings,
-        nextShapeSettings: loadedProject.ui.shapeSettings,
-      })
-      await refreshRecentProjects()
-    } catch (error) {
-      updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to open editor project')
-    }
-  }
-
-  async function handleOpenRecentProject(nextProjectPath: string) {
-    if (!confirmDiscardUnsavedChanges()) return
-    await openProjectFromPath(nextProjectPath)
-  }
-
-  function startNewProject(width: number, height: number) {
-    if (!confirmDiscardUnsavedChanges()) return
-    applyProjectState({
-      nextProjectPath: null,
-      nextProjectName: 'Untitled Project',
-      nextDocumentState: createDocument(width, height),
-      nextHistory: { past: [], future: [] },
-      nextTool: DEFAULT_EDITOR_SESSION.tool,
-      nextCanvasDraft: { width: String(width), height: String(height) },
-      nextMovementStep: DEFAULT_EDITOR_SESSION.movementStep,
-      nextMovementStepDraft: DEFAULT_EDITOR_SESSION.movementStepDraft,
-      nextPasteSizeDraft: DEFAULT_EDITOR_SESSION.pasteSizeDraft,
-      nextLayerPositionDraft: DEFAULT_EDITOR_SESSION.layerPositionDraft,
-      nextLayerSizeDraft: DEFAULT_EDITOR_SESSION.layerSizeDraft,
-      nextSelectionDraft: DEFAULT_EDITOR_SESSION.selectionDraft,
-      nextVariables: DEFAULT_EDITOR_SESSION.variables,
-      nextHighlightSettings: DEFAULT_EDITOR_SESSION.highlightSettings,
-      nextShapeSettings: DEFAULT_EDITOR_SESSION.shapeSettings,
-    })
-    updateHasUnsavedChangesStoreValue(true)
-  }
-
-  function applyProjectName() {
-    const nextProjectName = getProjectNameStoreValue().trim()
-    if (!nextProjectName) {
-      updateErrorMessageStoreValue('Project name cannot be empty')
-      return
-    }
-
-    if (nextProjectName === projectName) return
-    setProjectName(nextProjectName)
-    updateHasUnsavedChangesStoreValue(true)
-  }
 
   function applyMovementStep() {
     const movementStepVariables = documentState
@@ -452,7 +147,7 @@ export function EditorApp() {
       updateErrorMessageStoreValue('Movement step must be a valid number or math expression')
       return
     }
-    setMovementStep(String(nextMovementStep))
+    updateMovementStepStoreValue(String(nextMovementStep))
   }
 
   function applyCustomVariables() {
@@ -856,40 +551,6 @@ export function EditorApp() {
     }
   }, [activeLayer, documentState, imageRevision, selectionPreview, tool])
 
-  function pushHistory(label: string, previousDocument: EditorDocument, nextDocument: EditorDocument) {
-    setDocumentState(nextDocument)
-    updateHistoryStoreValue(current => ({
-      past: [...current.past, { label, document: cloneDocument(previousDocument) }],
-      future: [],
-    }))
-  }
-
-  function setCommittedDocument(documentValue: EditorDocument, label: string) {
-    setDocumentState(current => {
-      if (!current) {
-        updateHistoryStoreValue({ past: [], future: [] })
-        return documentValue
-      }
-      updateHistoryStoreValue(historyState => ({
-        past: [...historyState.past, { label, document: cloneDocument(current) }],
-        future: [],
-      }))
-      return documentValue
-    })
-  }
-
-  function createNewDocument(width: number, height: number) {
-    startNewProject(width, height)
-  }
-
-  function setCanvasSize(width: number, height: number) {
-    if (!documentState) {
-      createNewDocument(width, height)
-      return
-    }
-    setCommittedDocument({ ...cloneDocument(documentState), width, height }, 'Resize canvas')
-  }
-
   function applyPasteSize(widthValue: string, heightValue: string) {
     if (!documentState) return
 
@@ -1044,15 +705,6 @@ export function EditorApp() {
       label: '[Editor] Delete selected object',
     },
   ])
-
-  function findHandle(layer: ImageLayer, point: Point): ResizeHandle | null {
-    for (const item of getHandles(layer)) {
-      if (pointInRect(point, item.rect)) {
-        return item.handle
-      }
-    }
-    return null
-  }
 
   async function handleCanvasPointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
     if (!documentState) return
