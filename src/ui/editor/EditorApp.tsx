@@ -11,6 +11,7 @@ import { drawHighlightLayer } from './highlightUtils'
 import { parseRoundedMathExpression, resolveCustomVariables } from '../utils/customVariableUtils'
 import {
   clampSelectionToDocument,
+  cloneLayer,
   cloneDocument,
   getLayerRect,
   hitLayer,
@@ -619,6 +620,48 @@ export function EditorApp() {
     }
   }
 
+  function shouldHandlePasteTarget(target: EventTarget | null) {
+    if (target instanceof HTMLInputElement) return false
+    if (target instanceof HTMLTextAreaElement) return false
+    if (target instanceof HTMLSelectElement) return false
+    if (target instanceof HTMLElement && target.isContentEditable) return false
+    return true
+  }
+
+  function getClipboardImageExtension(mimeType: string) {
+    const extension = mimeType.split('/')[1]?.toLowerCase()
+    if (!extension) return 'png'
+    if (extension === 'jpeg') return 'jpg'
+    return extension
+  }
+
+  async function pasteImageFromClipboard() {
+    if (!documentState) return
+    if (!navigator.clipboard?.read) return
+
+    try {
+      const clipboardItems = await navigator.clipboard.read()
+      const files: File[] = []
+
+      for (const [index, clipboardItem] of clipboardItems.entries()) {
+        const imageType = clipboardItem.types.find(type => type.startsWith('image/'))
+        if (!imageType) continue
+
+        const blob = await clipboardItem.getType(imageType)
+        files.push(
+          new File([blob], `clipboard-image-${index + 1}.${getClipboardImageExtension(imageType)}`, {
+            type: imageType,
+          })
+        )
+      }
+
+      if (!files.length) return
+      await importFiles(files)
+    } catch (error) {
+      updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to paste image')
+    }
+  }
+
   function deleteLayer(layerId: string) {
     if (!documentState) return
     const layerIndex = documentState.layers.findIndex(layer => layer.id === layerId)
@@ -701,16 +744,28 @@ export function EditorApp() {
       },
       label: '[Editor] Save final image',
     },
-    documentState?.selection && {
+    (documentState?.selection || activeLayer) && {
       code: [
         { code: 'KeyC', metaKey: true },
         { code: 'KeyC', ctrlKey: true },
       ],
       handler: event => {
         event?.preventDefault()
-        void copySelectionToClipboard()
+        void copyCurrentItemToClipboard()
       },
-      label: '[Editor] Copy selection',
+      label: '[Editor] Copy current item',
+    },
+    documentState && {
+      code: [
+        { code: 'KeyV', metaKey: true },
+        { code: 'KeyV', ctrlKey: true },
+      ],
+      enabledIn: (event: KeyboardEvent | undefined) => shouldHandlePasteTarget(event?.target ?? null),
+      handler: event => {
+        event?.preventDefault()
+        void pasteImageFromClipboard()
+      },
+      label: '[Editor] Paste image',
     },
     activeLayer && {
       code: ['Backspace', 'Delete'],
@@ -755,6 +810,23 @@ export function EditorApp() {
       if (event.type !== 'editor-import-images') return
       void importImageData(event.files)
     })
+  }, [documentState])
+
+  useEffect(() => {
+    const handlePaste = (event: ClipboardEvent) => {
+      if (!documentState || !shouldHandlePasteTarget(event.target)) return
+
+      const imageFiles = Array.from(event.clipboardData?.files ?? []).filter(file => file.type.startsWith('image/'))
+      if (!imageFiles.length) return
+
+      event.preventDefault()
+      void importFiles(imageFiles)
+    }
+
+    window.addEventListener('paste', handlePaste)
+    return () => {
+      window.removeEventListener('paste', handlePaste)
+    }
   }, [documentState])
 
   async function handleCanvasPointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
@@ -940,36 +1012,14 @@ export function EditorApp() {
     })
   }
 
-  async function copySelectionToClipboard() {
-    if (!documentState?.selection || !mainCanvasRef.current) return
+  async function copyCanvasToClipboard(canvas: HTMLCanvasElement) {
     if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) {
       updateErrorMessageStoreValue('Image clipboard copy is not available in this environment')
       return
     }
 
     try {
-      const selection = documentState.selection
-      const clipboardCanvas = document.createElement('canvas')
-      clipboardCanvas.width = selection.width
-      clipboardCanvas.height = selection.height
-      const context = clipboardCanvas.getContext('2d')
-      if (!context) {
-        throw new Error('Could not create clipboard canvas')
-      }
-
-      context.drawImage(
-        mainCanvasRef.current,
-        selection.x,
-        selection.y,
-        selection.width,
-        selection.height,
-        0,
-        0,
-        selection.width,
-        selection.height
-      )
-
-      const blob = await new Promise<Blob | null>(resolve => clipboardCanvas.toBlob(resolve, 'image/png'))
+      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'))
       if (!blob) {
         throw new Error('Could not create clipboard image')
       }
@@ -978,6 +1028,77 @@ export function EditorApp() {
     } catch (error) {
       updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to copy selection to clipboard')
     }
+  }
+
+  async function copySelectionToClipboard() {
+    if (!documentState?.selection || !mainCanvasRef.current) return
+
+    const selection = documentState.selection
+    const clipboardCanvas = document.createElement('canvas')
+    clipboardCanvas.width = selection.width
+    clipboardCanvas.height = selection.height
+    const context = clipboardCanvas.getContext('2d')
+    if (!context) {
+      updateErrorMessageStoreValue('Could not create clipboard canvas')
+      return
+    }
+
+    context.drawImage(
+      mainCanvasRef.current,
+      selection.x,
+      selection.y,
+      selection.width,
+      selection.height,
+      0,
+      0,
+      selection.width,
+      selection.height
+    )
+
+    await copyCanvasToClipboard(clipboardCanvas)
+  }
+
+  async function copyActiveLayerToClipboard() {
+    if (!activeLayer) return
+
+    const clipboardCanvas = document.createElement('canvas')
+    clipboardCanvas.width = Math.max(1, Math.round(activeLayer.width))
+    clipboardCanvas.height = Math.max(1, Math.round(activeLayer.height))
+    const context = clipboardCanvas.getContext('2d')
+    if (!context) {
+      updateErrorMessageStoreValue('Could not create clipboard canvas')
+      return
+    }
+
+    if (isImageLayer(activeLayer)) {
+      const image = imageCache.get(activeLayer.dataUrl) ?? (await loadImageElement(activeLayer.dataUrl))
+      context.globalAlpha = activeLayer.opacity
+      context.imageSmoothingEnabled = true
+      context.drawImage(image, 0, 0, activeLayer.width, activeLayer.height)
+      await copyCanvasToClipboard(clipboardCanvas)
+      return
+    }
+
+    const layer = cloneLayer(activeLayer)
+    layer.x = 0
+    layer.y = 0
+
+    if (isHighlightLayer(layer)) {
+      drawHighlightLayer(context, layer)
+    } else if (isShapeLayer(layer)) {
+      drawShapeLayer(context, layer)
+    }
+
+    await copyCanvasToClipboard(clipboardCanvas)
+  }
+
+  async function copyCurrentItemToClipboard() {
+    if (documentState?.selection) {
+      await copySelectionToClipboard()
+      return
+    }
+
+    await copyActiveLayerToClipboard()
   }
 
   async function saveSelectionImage() {
