@@ -11,6 +11,7 @@ import {
   useRecentProjectsStore,
 } from './editorSimpleStores'
 import { useHasUnsavedChangesStoreValue } from './editorPersistenceState'
+import { FormWithInlineApply } from './form/FormWithInlineApply'
 
 type ProjectSectionProps = {
   onApplyProjectName: () => void
@@ -36,49 +37,39 @@ export function ProjectSection({
     <section>
       <Accordion title="Project" defaultOpen>
         <div className="space-y-3 bg-base-200/60 text-sm text-base-content/70">
-          <form
-            className="space-y-2"
-            onSubmit={event => {
-              event.preventDefault()
-              onApplyProjectName()
-            }}
+          <FormWithInlineApply
+            onSubmit={onApplyProjectName}
+            label="Project Name"
+            disabled={projectNameDraft.value.trim().length === 0 || projectNameDraft.value.trim() === projectName}
           >
-            <div className="grid grid-cols-[auto_1fr] items-center gap-2">
-              <Label>Project Name</Label>
-              <div className="flex gap-2">
-                <Input
-                  className="input-sm flex-1"
-                  value={projectNameDraft.value}
-                  onChange={value => setProjectNameDraft({ value })}
-                />
-                <Button
-                  type="submit"
-                  className="btn-sm"
-                  disabled={projectNameDraft.value.trim().length === 0 || projectNameDraft.value.trim() === projectName}
-                >
-                  Rename
-                </Button>
-              </div>
+            <Input value={projectNameDraft.value} onChange={value => setProjectNameDraft({ value })} />
+          </FormWithInlineApply>
+          <div className="break-all text-xs text-base-content/55">{projectPath ?? 'Unsaved project folder'}</div>
+
+          {projectPath && (
+            <div className="text-xs text-base-content/55">
+              {hasUnsavedChanges ? 'Changes pending save.' : 'Project is saved.'}
             </div>
-            <div className="break-all text-xs text-base-content/55">{projectPath ?? 'Unsaved project folder'}</div>
-          </form>
+          )}
 
-          <div className="text-xs text-base-content/55">
-            {hasUnsavedChanges ? 'Changes pending save.' : 'Project is saved.'}
-          </div>
-
-          <div className="flex gap-2">
-            <Button className="btn-sm flex-1" onClick={() => void onSaveProject()} disabled={isProjectSaving}>
+          <div className="flex">
+            <Button
+              className="btn-xs btn-soft rounded-none flex-1"
+              onClick={() => void onSaveProject()}
+              disabled={isProjectSaving}
+            >
               Save
             </Button>
-            <Button className="btn-sm btn-soft flex-1" onClick={() => void onOpenProject()}>
+            <Button className="btn-xs btn-soft rounded-none flex-1" onClick={() => void onOpenProject()}>
               Open
             </Button>
           </div>
 
           {recentProjects.length > 0 && (
             <div className="space-y-2">
-              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Switch project</div>
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">
+                Switch project
+              </div>
               <div className="space-y-2">
                 {recentProjects.map(project => (
                   <button

@@ -3,6 +3,7 @@ import { useDocumentStateStore, useHistoryStore } from './editorCoreStores'
 import { useActiveLayerValue } from './editorDerivedValues'
 import { EditorDocument, EditorLayer } from './types'
 import { ArrayUtils } from '@common/ArrayUtils'
+import { Accordion } from '@/lib/components/accordion'
 
 function cloneLayer<T extends EditorLayer>(layer: T): T {
   if (layer.type === 'highlight') {
@@ -75,66 +76,68 @@ export function ObjectsListSection() {
 
   return (
     <section>
-      <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/45">Objects</div>
-      <div className="rounded-2xl border border-base-content/10 bg-base-200/60 p-3 text-sm text-base-content/70">
-        {documentState && documentState.layers.length > 0 ? (
-          <div className="space-y-2">
-            <div className="text-xs text-base-content/55">Top to bottom order. Use the arrows to change stacking.</div>
-            {[...documentState.layers].reverse().map(layer => {
-              const originalIndex = documentState.layers.findIndex(currentLayer => currentLayer.id === layer.id)
-              const canMoveUp = originalIndex < documentState.layers.length - 1
-              const canMoveDown = originalIndex > 0
-              const isActive = activeLayer?.id === layer.id
+      <Accordion title="Objects" defaultOpen>
+        <div className="bg-base-200/60 text-sm text-base-content/70">
+          {documentState && documentState.layers.length > 0 ? (
+            <div className="">
+              {[...documentState.layers].reverse().map(layer => {
+                const originalIndex = documentState.layers.findIndex(currentLayer => currentLayer.id === layer.id)
+                const canMoveUp = originalIndex < documentState.layers.length - 1
+                const canMoveDown = originalIndex > 0
+                const isActive = activeLayer?.id === layer.id
 
-              return (
-                <div
-                  key={layer.id}
-                  className={cn(
-                    'flex items-center gap-2 rounded-xl border px-2 py-2',
-                    isActive ? 'border-info/60 bg-info/10' : 'border-base-content/10 bg-base-100/40'
-                  )}
-                >
-                  <button
+                return (
+                  <div
+                    key={layer.id}
                     className={cn(
-                      'min-w-0 flex-1 text-left text-sm',
-                      isActive ? 'text-base-content' : 'text-base-content/75'
+                      'flex items-center border px-2 py-2',
+                      isActive ? 'border-info/60 bg-info/10' : 'border-base-content/10 bg-base-100/40'
                     )}
-                    onClick={() => setDocumentState(current => (current ? { ...current, activeLayerId: layer.id } : current))}
                   >
-                    <div className="truncate font-medium">{layer.name}</div>
-                    <div className="text-[11px] uppercase tracking-[0.14em] text-base-content/45">{layer.type}</div>
-                  </button>
-                  <button
-                    className="btn btn-xs btn-ghost"
-                    onClick={() => moveLayer(layer.id, 'up')}
-                    disabled={!canMoveUp}
-                    title="Move toward front"
-                  >
-                    ↑
-                  </button>
-                  <button
-                    className="btn btn-xs btn-ghost"
-                    onClick={() => moveLayer(layer.id, 'down')}
-                    disabled={!canMoveDown}
-                    title="Move toward back"
-                  >
-                    ↓
-                  </button>
-                  <button
-                    className="btn btn-xs btn-ghost text-error"
-                    onClick={() => deleteLayer(layer.id)}
-                    title="Delete object"
-                  >
-                    ×
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-        ) : (
-          <div>No objects yet.</div>
-        )}
-      </div>
+                    <button
+                      className={cn(
+                        'min-w-0 flex-1 text-left text-xs',
+                        isActive ? 'text-base-content' : 'text-base-content/75'
+                      )}
+                      onClick={() =>
+                        setDocumentState(current => (current ? { ...current, activeLayerId: layer.id } : current))
+                      }
+                    >
+                      <div className="truncate font-medium">{layer.name}</div>
+                      <div className="text-[8px] uppercase tracking-[0.14em] text-base-content/45">{layer.type}</div>
+                    </button>
+                    <button
+                      className="btn btn-xs btn-ghost"
+                      onClick={() => moveLayer(layer.id, 'up')}
+                      disabled={!canMoveUp}
+                      title="Move toward front"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      className="btn btn-xs btn-ghost"
+                      onClick={() => moveLayer(layer.id, 'down')}
+                      disabled={!canMoveDown}
+                      title="Move toward back"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      className="btn btn-xs btn-ghost text-error"
+                      onClick={() => deleteLayer(layer.id)}
+                      title="Delete object"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="text-xs">No objects yet.</div>
+          )}
+        </div>
+      </Accordion>
     </section>
   )
 }
