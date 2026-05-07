@@ -4,7 +4,7 @@ import { ContextMenu, ContextMenuList, useContextMenu } from '@/lib/components/c
 import { useShortcuts } from '@/lib/hooks/useShortcuts'
 import { getWindowElectron, windowArgs } from '@/getWindowElectron'
 import { pointInRect, snapToStep } from '@common/TransformUtils'
-import { createLayerFromDataUrl, createLayerFromFile, loadImageElement } from './raster'
+import { createLayerFromDataUrl, createLayerFromFile, loadImageElement, readFileAsDataUrl } from './raster'
 import { drawTextLayer } from './textUtils'
 import { EditorDocument } from './types'
 import { drawShapeLayer } from './shapeUtils'
@@ -100,6 +100,7 @@ import {
   refreshRecentProjects,
   saveProjectToPath,
   setCanvasSize,
+  startNewProjectFromImage,
 } from './editorActions'
 
 type CanvasContextMenuItem =
@@ -639,6 +640,23 @@ export function EditorApp() {
     }
   }
 
+  async function createProjectFromImageData(name: string, dataUrl: string) {
+    try {
+      await startNewProjectFromImage(name, dataUrl)
+    } catch (error) {
+      updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to create project from image')
+    }
+  }
+
+  async function createProjectFromFile(file: File) {
+    try {
+      const dataUrl = await readFileAsDataUrl(file)
+      await createProjectFromImageData(file.name, dataUrl)
+    } catch (error) {
+      updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to create project from image')
+    }
+  }
+
   function shouldHandlePasteTarget(target: EventTarget | null) {
     if (target instanceof HTMLInputElement) return false
     if (target instanceof HTMLTextAreaElement) return false
@@ -654,26 +672,53 @@ export function EditorApp() {
     return extension
   }
 
+  async function getClipboardImageFiles() {
+    if (!navigator.clipboard?.read) return [] as File[]
+
+    const clipboardItems = await navigator.clipboard.read()
+    const files: File[] = []
+
+    for (const [index, clipboardItem] of clipboardItems.entries()) {
+      const imageType = clipboardItem.types.find(type => type.startsWith('image/'))
+      if (!imageType) continue
+
+      const blob = await clipboardItem.getType(imageType)
+      files.push(
+        new File([blob], `clipboard-image-${index + 1}.${getClipboardImageExtension(imageType)}`, {
+          type: imageType,
+        })
+      )
+    }
+
+    return files
+  }
+
+  async function createProjectFromClipboard() {
+    try {
+      const files = await getClipboardImageFiles()
+      if (!files.length) return
+      await createProjectFromFile(files[0])
+    } catch (error) {
+      updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to create project from clipboard')
+    }
+  }
+
+  async function createProjectFromImageFileSystem() {
+    try {
+      const response = await getWindowElectron().openEditorImageFiles()
+      if (response.canceled || response.files.length === 0) return
+      const file = response.files[0]
+      await createProjectFromImageData(file.name, file.dataUrl)
+    } catch (error) {
+      updateErrorMessageStoreValue(error instanceof Error ? error.message : 'Failed to create project from image')
+    }
+  }
+
   async function pasteImageFromClipboard() {
     if (!documentState) return
-    if (!navigator.clipboard?.read) return
 
     try {
-      const clipboardItems = await navigator.clipboard.read()
-      const files: File[] = []
-
-      for (const [index, clipboardItem] of clipboardItems.entries()) {
-        const imageType = clipboardItem.types.find(type => type.startsWith('image/'))
-        if (!imageType) continue
-
-        const blob = await clipboardItem.getType(imageType)
-        files.push(
-          new File([blob], `clipboard-image-${index + 1}.${getClipboardImageExtension(imageType)}`, {
-            type: imageType,
-          })
-        )
-      }
-
+      const files = await getClipboardImageFiles()
       if (!files.length) return
       await importFiles(files)
     } catch (error) {
@@ -774,7 +819,7 @@ export function EditorApp() {
       },
       label: '[Editor] Copy current item',
     },
-    documentState && {
+    {
       code: [
         { code: 'KeyV', metaKey: true },
         { code: 'KeyV', ctrlKey: true },
@@ -782,9 +827,14 @@ export function EditorApp() {
       enabledIn: (event: KeyboardEvent | undefined) => shouldHandlePasteTarget(event?.target ?? null),
       handler: event => {
         event?.preventDefault()
-        void pasteImageFromClipboard()
+        if (documentState) {
+          void pasteImageFromClipboard()
+          return
+        }
+
+        void createProjectFromClipboard()
       },
-      label: '[Editor] Paste image',
+      label: '[Editor] Paste image or create project',
     },
     activeLayer && {
       code: ['Backspace', 'Delete'],
@@ -802,6 +852,14 @@ export function EditorApp() {
 
       if (event.action === 'new-project') {
         createNewDocument(1024, 1024)
+        return
+      }
+      if (event.action === 'new-project-from-clipboard') {
+        void createProjectFromClipboard()
+        return
+      }
+      if (event.action === 'new-project-from-image') {
+        void createProjectFromImageFileSystem()
         return
       }
       if (event.action === 'open-project') {
@@ -822,7 +880,7 @@ export function EditorApp() {
       }
       return
     })
-  }, [handleOpenProject, handleSaveProject, saveFinalImage])
+  }, [documentState, handleOpenProject, handleSaveProject, saveFinalImage])
 
   useEffect(() => {
     return getWindowElectron().onGenericEvent(event => {
@@ -833,12 +891,17 @@ export function EditorApp() {
 
   useEffect(() => {
     const handlePaste = (event: ClipboardEvent) => {
-      if (!documentState || !shouldHandlePasteTarget(event.target)) return
+      if (!shouldHandlePasteTarget(event.target)) return
 
       const imageFiles = Array.from(event.clipboardData?.files ?? []).filter(file => file.type.startsWith('image/'))
       if (!imageFiles.length) return
 
       event.preventDefault()
+      if (!documentState) {
+        void createProjectFromFile(imageFiles[0])
+        return
+      }
+
       void importFiles(imageFiles)
     }
 
@@ -1316,12 +1379,20 @@ export function EditorApp() {
               onDrop={event => {
                 event.preventDefault()
                 if (event.dataTransfer.files.length) {
+                  const imageFiles = Array.from(event.dataTransfer.files).filter(file => file.type.startsWith('image/'))
+                  if (!imageFiles.length) return
+                  if (!documentState) {
+                    void createProjectFromFile(imageFiles[0])
+                    return
+                  }
                   void importFiles(event.dataTransfer.files)
                 }
               }}
             >
               <EmptyProjectState
                 onCreateNewDocument={createNewDocument}
+                onCreateProjectFromClipboard={() => void createProjectFromClipboard()}
+                onCreateProjectFromImageFile={() => void createProjectFromImageFileSystem()}
                 onOpenRecentProject={handleOpenRecentProject}
                 onApplyCanvasDraft={applyCanvasDraft}
               />

@@ -6,7 +6,13 @@ export type GenericEvent =
     }
   | {
       type: 'editor-action'
-      action: 'new-project' | 'open-project' | 'save-project' | 'save-png'
+      action:
+        | 'new-project'
+        | 'new-project-from-clipboard'
+        | 'new-project-from-image'
+        | 'open-project'
+        | 'save-project'
+        | 'save-png'
     }
   | {
       type: 'editor-action'

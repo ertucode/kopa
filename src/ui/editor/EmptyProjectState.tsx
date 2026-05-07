@@ -12,12 +12,16 @@ const DOCUMENT_PRESETS: NewDocumentPreset[] = [
 
 type EmptyProjectStateProps = {
   onCreateNewDocument: (width: number, height: number) => void
+  onCreateProjectFromClipboard: () => void | Promise<void>
+  onCreateProjectFromImageFile: () => void | Promise<void>
   onOpenRecentProject: (projectPath: string) => void | Promise<void>
   onApplyCanvasDraft: () => void
 }
 
 export function EmptyProjectState({
   onCreateNewDocument,
+  onCreateProjectFromClipboard,
+  onCreateProjectFromImageFile,
   onOpenRecentProject,
   onApplyCanvasDraft,
 }: EmptyProjectStateProps) {
@@ -71,6 +75,14 @@ export function EmptyProjectState({
             </div>
           </button>
         ))}
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <Button className="btn-soft" onClick={() => void onCreateProjectFromClipboard()}>
+          From Clipboard
+        </Button>
+        <Button className="btn-soft" onClick={() => void onCreateProjectFromImageFile()}>
+          From Image...
+        </Button>
       </div>
       <div className="mt-8 grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
         <label className="form-control gap-2">

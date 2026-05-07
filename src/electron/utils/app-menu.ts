@@ -10,7 +10,15 @@ type EditorImageFile = {
   dataUrl: string
 }
 
-function sendEditorAction(action: 'new-project' | 'open-project' | 'save-project' | 'save-png') {
+function sendEditorAction(
+  action:
+    | 'new-project'
+    | 'new-project-from-clipboard'
+    | 'new-project-from-image'
+    | 'open-project'
+    | 'save-project'
+    | 'save-png'
+) {
   BrowserWindow.getFocusedWindow()?.webContents.send('generic:event', {
     type: 'editor-action',
     action,
@@ -92,6 +100,18 @@ export async function buildAppMenuTemplate(
           accelerator: 'Shift+CmdOrCtrl+N',
           click: () => {
             sendEditorAction('new-project')
+          },
+        },
+        {
+          label: 'New Project From Clipboard',
+          click: () => {
+            sendEditorAction('new-project-from-clipboard')
+          },
+        },
+        {
+          label: 'New Project From Image...',
+          click: () => {
+            sendEditorAction('new-project-from-image')
           },
         },
         {

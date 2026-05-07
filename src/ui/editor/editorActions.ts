@@ -66,6 +66,7 @@ import { HighlightSettingsState } from './highlightUtils'
 import { ShapeSettingsState } from './shapeUtils'
 import { imageCache } from './editorImageCache'
 import { TextSettingsState } from './textUtils'
+import { createLayerFromDataUrl, loadImageElement } from './raster'
 
 type ApplyProjectStateArgs = {
   nextProjectPath: string | null
@@ -284,6 +285,43 @@ export function startNewProject(width: number, height: number, background = DEFA
     nextCanvasDraft: {
       width: String(width),
       height: String(height),
+      background,
+    },
+    nextMovementStep: DEFAULT_EDITOR_SESSION.movementStep,
+    nextMovementStepDraft: DEFAULT_EDITOR_SESSION.movementStepDraft,
+    nextPasteSizeDraft: DEFAULT_EDITOR_SESSION.pasteSizeDraft,
+    nextLayerPositionDraft: DEFAULT_EDITOR_SESSION.layerPositionDraft,
+    nextLayerSizeDraft: DEFAULT_EDITOR_SESSION.layerSizeDraft,
+    nextSelectionDraft: DEFAULT_EDITOR_SESSION.selectionDraft,
+    nextVariables: DEFAULT_EDITOR_SESSION.variables,
+    nextHighlightSettings: DEFAULT_EDITOR_SESSION.highlightSettings,
+    nextShapeSettings: DEFAULT_EDITOR_SESSION.shapeSettings,
+    nextTextSettings: DEFAULT_EDITOR_SESSION.textSettings,
+  })
+  updateHasUnsavedChangesStoreValue(true)
+}
+
+export async function startNewProjectFromImage(name: string, dataUrl: string) {
+  if (!confirmDiscardUnsavedChanges()) return
+
+  const background = DEFAULT_EDITOR_SESSION.canvasDraft.background
+  const image = await loadImageElement(dataUrl)
+  const documentState = createDocument(image.naturalWidth, image.naturalHeight, background)
+  const layer = await createLayerFromDataUrl(name, dataUrl, documentState)
+
+  applyProjectState({
+    nextProjectPath: null,
+    nextProjectName: 'Untitled Project',
+    nextDocumentState: {
+      ...documentState,
+      layers: [layer],
+      activeLayerId: layer.id,
+    },
+    nextHistory: { past: [], future: [] },
+    nextTool: DEFAULT_EDITOR_SESSION.tool,
+    nextCanvasDraft: {
+      width: String(image.naturalWidth),
+      height: String(image.naturalHeight),
       background,
     },
     nextMovementStep: DEFAULT_EDITOR_SESSION.movementStep,
