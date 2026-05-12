@@ -54,6 +54,7 @@ import {
   useImageRevisionStore,
   updateMovementStepStoreValue,
   getToolStoreValue,
+  updateToolStoreValue,
   useToolStoreValue,
   useCustomVariablesStoreValue,
   getMovementStepDraftStoreValue,
@@ -780,6 +781,36 @@ export function EditorApp() {
     })
   }
 
+  function handleSelectWholeCanvas() {
+    if (!documentState) return
+
+    updateToolStoreValue('marquee')
+    updateInteractionStoreValue(null)
+    updateSelectionPreviewStoreValue(null)
+
+    const nextDocument: EditorDocument = {
+      ...documentState,
+      activeLayerId: null,
+      selection: {
+        x: 0,
+        y: 0,
+        width: documentState.width,
+        height: documentState.height,
+      },
+    }
+
+    const selectionUnchanged =
+      documentState.activeLayerId === null &&
+      documentState.selection?.x === 0 &&
+      documentState.selection?.y === 0 &&
+      documentState.selection?.width === documentState.width &&
+      documentState.selection?.height === documentState.height
+
+    if (selectionUnchanged) return
+
+    pushHistory('Select canvas', documentState, nextDocument)
+  }
+
   useShortcuts([
     {
       code: [
@@ -807,6 +838,17 @@ export function EditorApp() {
         void saveFinalImage()
       },
       label: '[Editor] Save final image',
+    },
+    documentState && {
+      code: [
+        { code: 'KeyA', metaKey: true },
+        { code: 'KeyA', ctrlKey: true },
+      ],
+      handler: event => {
+        event?.preventDefault()
+        handleSelectWholeCanvas()
+      },
+      label: '[Editor] Select whole canvas',
     },
     (documentState?.selection || activeLayer) && {
       code: [
