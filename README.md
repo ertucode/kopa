@@ -1,4 +1,6 @@
 - npm run dev
-- npm run build (Build for mac, works after npm run build-vendor is run once)
-- npm run build-everything (Build for mac, runs build-vendor and build)
-- xattr -cr /Applications/Kopa.app (To run built)
+- npm run build (Build for mac and install Kopa for all users in `/Applications`; works after npm run build-vendor is run once)
+- npm run build:app (Build and locally sign Kopa for mac without installing)
+- npm run sign:mac (Apply a local ad-hoc signature to the existing build)
+- npm run install:mac (Install the existing build for all users; requires administrator access)
+- npm run build-everything (Build vendor dependencies, build Kopa, and install it)
